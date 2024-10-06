@@ -107,6 +107,9 @@ class Game:
                         if not col: return
 
                     pygame.draw.rect(self.screen, clamp_rgb(col), (x*self.res, y*self.res, self.res, self.res))
+        
+        else:
+            self.screen.fill(col)
 
         for sprite in self.sprites:
             for y in range(sprite.height-1):
