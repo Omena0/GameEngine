@@ -28,6 +28,7 @@ def shader(col, x, y, frame, sprite):
 
 @game.on("keyDown")
 def move(key):
+    key = key['key']
     if key == gl.pygame.K_w:
         paddle1.move((0, -1))
     elif key == gl.pygame.K_s:

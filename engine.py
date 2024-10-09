@@ -66,6 +66,10 @@ class Sprite:
 
         return None
 
+    def updateTexture(self,texture):
+        self.width = len(texture)+1
+        self.height = len(texture[0])+1
+        self.texture = texture
 
     def add(self, game):
         self.game = game
@@ -74,7 +78,10 @@ class Sprite:
 
 events = {
     "keyDown": pygame.KEYDOWN,
-    "keyUp": pygame.KEYUP
+    "keyUp": pygame.KEYUP,
+    "mouseDown": pygame.MOUSEBUTTONDOWN,
+    "mouseMove": pygame.MOUSEMOTION,
+    "mouseUp": pygame.MOUSEBUTTONUP
 }
 
 class Game:
@@ -107,14 +114,18 @@ class Game:
                         if not col: return
 
                     pygame.draw.rect(self.screen, clamp_rgb(col), (x*self.res, y*self.res, self.res, self.res))
-        
+
         else:
             self.screen.fill(col)
 
         for sprite in self.sprites:
-            for y in range(sprite.height-1):
-                for x in range(sprite.width-1):
+            if sprite.x >= self.width or sprite.y >= self.height: continue
+            if sprite.x+sprite.width < 0 or sprite.y+sprite.height < 0: continue
+            for y in range(max(0, -int(sprite.y)), min(sprite.height-1, int(self.height+1-sprite.y))):
+                for x in range(max(0, -int(sprite.x)), min(sprite.width-1, int(self.width+1-sprite.x))):
+
                     col = sprite.texture[x][y]
+
                     for shader in self.shaders:
                         col = shader(col, sprite.x+x, sprite.y+y, self.frame, sprite)
                         if not col: return
@@ -144,7 +155,7 @@ class Game:
                     for eventName, eventValue in events.items():
                         if action == eventName and event.type == eventValue:
                             for callback in callbacks:
-                                callback(event.dict['key'])
+                                callback(event.dict)
 
                 if event.type == pygame.QUIT:
                     self.running = False
