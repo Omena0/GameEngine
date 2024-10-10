@@ -307,6 +307,20 @@ def keyDown(key):  # sourcery skip: low-code-quality
             object = Platform((x,y),width,height,attr)
             object.sprite.updateTexture(texture)
 
+    elif key == gl.pygame.K_DELETE:
+        if not editor: return
+        mouse_pos = gl.pygame.mouse.get_pos()
+        pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
+        pos = round(pos[0]), round(pos[1])
+
+        print(pos)
+
+        for sprite in objects:
+            if sprite.collidepoint(pos):
+                game.sprites.remove(sprite)
+                objects.remove(sprite)
+                break
+
 @game.on('keyUp')
 def keyUp(key):
     key = key['key']
