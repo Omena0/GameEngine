@@ -1,3 +1,4 @@
+import os
 
 FORMAT_NUM = 0
 VERSION = 0
@@ -12,14 +13,17 @@ class Level:
         2: <total number of objects>:<format_number>:<game_version>
         3: <level_name>:<level_description>
         4: magic: "SECTOR:DATA"
-        5: <platform_x>:<platform_y>:<platform_width>:<platform_height>:<platform_attributes>
+        5: <object_x>:<object_y>:<object_width>:<object_height>:<object_attributes>:<object_texture>
         ...
         6: magic: "EOF"
     """
     def __init__(self,filePath:str):
         self.filePath = filePath
-        with open(filePath) as f:
-            self.src = f.readlines()
+        if os.path.exists(filePath):
+            with open(filePath) as f:
+                self.src = f.read().splitlines()
+        else:
+            self.src = ''
 
     def load_level(self):
         self.meta = {}
@@ -43,7 +47,7 @@ class Level:
                 raise ValueError('Invalid format: Sector not specified.')
 
             elif sector == 'META':
-                if line.count(':') == 3:
+                if line.count(':') == 2:
                     self.meta['object_count'], self.meta['format'], self.meta['version'] = line.split(':')
                     if int(self.meta['format']) < FORMAT_NUM:
                         raise ValueError(f'Old level format: {self.meta["format"]} (Current is {FORMAT_NUM})')
@@ -51,21 +55,20 @@ class Level:
                     elif int(self.meta['format']) > FORMAT_NUM:
                         raise ValueError(f'Newer level format: {self.meta["format"]} (Current is {FORMAT_NUM})')
 
-                elif line.count(':') == 2:
+                elif line.count(':') == 1:
                     self.meta['name'], self.meta['description'] = line.split(':')
 
                 else:
                     raise ValueError(f'Invalid format: Invalid meta data. (Expected 2-3 fields, got {line.count(':')})')
 
             elif sector == 'DATA':
+                if line == 'EOF':
+                    return self.meta, self.objects
                 self.objects.append(line.split(':'))
 
+        raise ValueError("Invalid format: EOF not found")
 
-        # Handle EOF
-        if self.src[-1].strip() != 'EOF':
-            raise ValueError("Invalid format: EOF not found")
-
-    def save_level(self, meta, objects):
+    def save_level(self, meta, objects):  # sourcery skip: extract-method
         with open(self.filePath, 'w') as file:
             # Write magic strings
             file.write("lvlLdr\n")
@@ -75,8 +78,17 @@ class Level:
             file.write("SECTOR:DATA\n")
 
             # Write objects
-            for object in objects:
-                file.write(":".join(object)+'\n')
+            for sprite in objects:
+                object = sprite.object
+                attr = ''.join(f'{key}={value},' for key, value in object.attributes.items()).removesuffix(',')
+
+                file.write(f'{object.x}:')
+                file.write(f'{object.y}:')
+                file.write(f'{object.width}:')
+                file.write(f'{object.height}:')
+                file.write(f'{attr}:')
+                file.write(f'{object.texture}')
+                file.write('\n')
 
             # Write EOF
             file.write("EOF\n")

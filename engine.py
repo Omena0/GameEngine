@@ -45,6 +45,14 @@ class Sprite:
             and self.y+1 < sprites.y + sprites.height
         ) else None
 
+    def collidepoint(self, point):
+        self.pos = round(self.pos[0]), round(self.pos[1])
+
+        return (
+            point[0] in range(self.pos[0], self.pos[0]+self.width-1)
+            and point[1] in range(self.pos[1], self.pos[1]+self.height-1)
+        )
+
     def raycast(self, angle, distance=500):
         """
         Raycast from the sprite in the given direction
@@ -131,7 +139,6 @@ class Game:
                         if not col: return
 
                     pygame.draw.rect(self.screen, clamp_rgb(col), ((sprite.x+x)*self.res, (sprite.y+y)*self.res, self.res, self.res))
-
 
     def shader(self,callback):
         self.shaders.append(callback)
