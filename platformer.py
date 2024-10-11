@@ -43,7 +43,7 @@ space - Dash
 --- General ---
 q - Quit
 f  - Fly
-p - Phase
+n - Noclip
 e - Editor
 h - Help
 
@@ -330,7 +330,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
     elif key == gl.pygame.K_f:
         flight = not flight
 
-    elif key == gl.pygame.K_p:
+    elif key == gl.pygame.K_n:
         noclip = not noclip
 
     elif key == gl.pygame.K_e:
