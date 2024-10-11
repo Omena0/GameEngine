@@ -1,7 +1,10 @@
 
 # GameEngine
 
-Game engine fr
+Simple pygame sprite renderer.
 
-Draws sprites on screen.
-Supports shaders.
+You can use shaders to add effects to your games.
+
+## Platformer
+
+An actual game with a level editor.
