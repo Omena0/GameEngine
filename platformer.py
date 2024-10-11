@@ -120,8 +120,13 @@ class Platform(Object):
         return self.texture
 
     def setPos(self, x, y):
-        self.pos = x,y
         self.sprite.setPos(x,y)
+        self.pos = x,y
+        self.sprite.x = x
+        self.sprite.y = y
+        self.x = x
+        self.y = y
+        updateCamera()
 
 # Spawns a platform so you dont fall into the void instantly
 Platform((30,30), 20)
@@ -258,8 +263,6 @@ def mouseMove(event):
             width = int(pos[0]-startPos[0])+1
             height = int(pos[1]-startPos[1])+1
 
-            print(width,height)
-
             if width < 1:
                 editedObj.setPos(pos[0], editedObj.y)
                 width = startPos[0]-pos[0]
@@ -271,8 +274,6 @@ def mouseMove(event):
                 height = startPos[1]-pos[1]
 
             editedObj.height = max(height,1)
-
-            print(width,height)
 
             editedObj.sprite.updateTexture(editedObj.gen_texture())
 
@@ -418,16 +419,17 @@ def keyDown(key):  # sourcery skip: low-code-quality
 def keyUp(key):
     key = key['key']
     global cx, cy, pressedX, pressedY
+    match key:
         case gl.pygame.K_a:
-        pressedX -= 1
+            pressedX -= 1
         case gl.pygame.K_d:
-        pressedX += 1
+            pressedX += 1
         case gl.pygame.K_w:
-        if flight:
-            pressedY -= 1
+            if flight:
+                pressedY -= 1
         case gl.pygame.K_s:
-        if flight:
-            pressedY += 1
+            if flight:
+                pressedY += 1
 
 # Run the game
 game.run()
