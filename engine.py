@@ -16,10 +16,8 @@ class Sprite:
         self.height = len(texture[0])+1
         self.texture = texture
 
-    def setPos(self,pos):
-        self.pos = pos
-        self.x = pos[0]
-        self.y = pos[1]
+    def setPos(self,x,y):
+        self.pos = x,y
 
     def move(self, pos):
         self.x += pos[0]
