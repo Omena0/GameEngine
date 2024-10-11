@@ -28,10 +28,11 @@ pressedX = 0
 pressedY = 0
 
 ### [Vars/Flags]
-flight = False
-noclip = False
-editor = False
-help   = False
+flight  = False
+noclip  = False
+editor  = False
+help    = False
+paint = False
 
 helptext = """--- Movement ---
 w - Jump/Up
@@ -46,6 +47,7 @@ f  - Fly
 n - Noclip
 e - Editor
 h - Help
+p - Paint
 
 
 --- Editor ---
@@ -67,6 +69,7 @@ startPos = None
 editedObj = None
 selectedObj = None
 clipboard = None
+selectedCol = None
 
 ### [Vars/Level]
 objects = []
@@ -222,16 +225,24 @@ def frame(frame):
 
 ### [Editor Mouse]
 @game.on('mouseDown')
-def mouseDown(event):
-    global startPos, grabPos, editedObj, editor, mode
+def mouseDown(event):  # sourcery skip: low-code-quality
+    global startPos, grabPos, editedObj, editor, mode, selectedCol
     if not editor: return
     pos = (event['pos'][0]//game.res-cx, event['pos'][1]//game.res-cy)
     pos = round(pos[0]), round(pos[1])
 
     if event['button'] == 1:
-        startPos = pos
-        mode = 'add'
-        editedObj = Platform(pos,1,1)
+        if paint and editor:
+            if not selectedCol: return
+            for object in objects:
+                if object.collidepoint(pos):
+                    pos = pos[0]-object.pos[0], pos[1]-object.pos[1]
+                    object.texture[pos[0]][pos[1]] = selectedCol
+                    break
+        else:
+            startPos = pos
+            mode = 'add'
+            editedObj = Platform(pos,1,1)
 
     elif event['button'] == 2:
         for sprite in objects:
@@ -304,7 +315,7 @@ def mouseUp(event):
 @game.on('keyDown')
 def keyDown(key):  # sourcery skip: low-code-quality
     key = key['key']
-    global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip, editor, meta, objects, clipboard, help
+    global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip, editor, meta, objects, clipboard, help, paint
 
     match key:
         case gl.pygame.K_w:
@@ -362,13 +373,13 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
             meta, newObjects = Level('level.txt').load_level()
             for object in newObjects:
-                x,y,width,height,attr,texture = object
+                x,y,width,height,attr,paint = object
                 x,y,width,height = int(x),int(y),int(width),int(height)
                 attr = dict([(i.split('=')[0], convert_type(i.split('=')[1])) for i in attr.split(',')])
-                texture = convert_type(texture)
+                paint = convert_type(paint)
 
                 object = Platform((x,y),width,height,attr)
-                object.sprite.updateTexture(texture)
+                object.sprite.updateTexture(paint)
 
         case gl.pygame.K_DELETE:
             if not editor: return
@@ -408,12 +419,15 @@ def keyDown(key):  # sourcery skip: low-code-quality
             pos = round(pos[0]), round(pos[1])
 
             if gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL and clipboard:
-                x,y,width,height,attributes,texture = clipboard
+                x,y,width,height,attributes,paint = clipboard
                 object = Platform((pos[0]+x,pos[1]+y),width,height,attributes)
-                object.sprite.updateTexture(texture)
+                object.sprite.updateTexture(paint)
 
         case gl.pygame.K_h:
             help = not help
+
+        case gl.pygame.K_p:
+            paint = not paint
 
 @game.on('keyUp')
 def keyUp(key):
