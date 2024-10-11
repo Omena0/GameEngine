@@ -253,8 +253,27 @@ def mouseMove(event):
         if mode == 'add':
             width = int(pos[0]-startPos[0])+1
             height = int(pos[1]-startPos[1])+1
+
+            print(width,height)
+
+            if width < 1:
+                editedObj.x = pos[0]
+                editedObj.pos = pos[0], editedObj.y
+                editedObj.sprite.pos = pos[0], editedObj.y
+                width = startPos[0]-pos[0]
+
             editedObj.width = max(width,1)
+
+            if height < 1:
+                editedObj.y = pos[1]
+                editedObj.pos = editedObj.x, pos[1]
+                editedObj.sprite.pos = editedObj.x, pos[1]
+                height = startPos[1]-pos[1]
+
             editedObj.height = max(height,1)
+
+            print(width,height)
+
             editedObj.sprite.updateTexture(editedObj.gen_texture())
 
         elif mode == 'edit':
@@ -303,7 +322,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
             updateCamera()
 
     elif key == gl.pygame.K_s:
-        if editor and gl.pygame.key.get_mods() & gl.pygame.key.KMOD_CTRL:
+        if editor and gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL:
             Level('level.txt').save_level(meta, objects)
         elif flight:
             pressedY -= 1
