@@ -303,7 +303,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
             updateCamera()
 
     elif key == gl.pygame.K_s:
-        if editor and gl.pygame.key.get_mods() & gl.pygame.key.MOD_CTRL:
+        if editor and gl.pygame.key.get_mods() & gl.pygame.key.KMOD_CTRL:
             Level('level.txt').save_level(meta, objects)
         elif flight:
             pressedY -= 1
