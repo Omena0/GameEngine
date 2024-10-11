@@ -16,6 +16,7 @@ gravity = 0.03
 acceleration = 40
 max_speed = 0.6
 air_resistance = 0.98
+friction = 0.95
 maxJumps = 2
 maxDashes = 1
 
@@ -30,12 +31,42 @@ pressedY = 0
 flight = False
 noclip = False
 editor = False
+help   = False
+
+helptext = """--- Movement ---
+w - Jump/Up
+a - Left
+s - Down
+d - Right
+space - Dash
+
+--- General ---
+q - Quit
+f  - Fly
+p - Phase
+e - Editor
+h - Help
+
+
+--- Editor ---
+Left Mouse      - Create object (drag)
+Right Mouse   - Move object (drag)
+Middle Mouse - Resize object (drag)
+
+c - Toggle object physics
+
+ctrl + s - Save
+ctrl + l  - Load
+ctrl + c - Copy
+ctrl + v - Paste
+delete  - Delete"""
 
 ### [Vars/Editor]
 mode = None
 startPos = None
 editedObj = None
 selectedObj = None
+clipboard = None
 
 ### [Vars/Level]
 objects = []
@@ -109,6 +140,17 @@ def updateCamera():
         sprite.x = sprite.pos[0] + cx
         sprite.y = sprite.pos[1] + cy
 
+def drawText(text:str,x:int,y:int,size=10,color=(255,255,255),bold=False,italic=False):
+    font = gl.pygame.font.SysFont('FreeSans',size,bold,italic)
+    i = 0
+    for line in text.splitlines():
+        if line:
+            surf = font.render(line,1,color)
+            game.screen.blit(surf,(x,y+size*i))
+            i += 1.1
+        else:
+            i += 0.5
+
 ### [GameLoop/Event]
 @game.on('frame')
 def frame(frame):
@@ -123,6 +165,15 @@ def frame(frame):
 
     cx += vel[0]
     cy += vel[1]
+
+    ### [GameLoop/Apply friction]
+    platforms = player.collides_with(objects)
+    if platforms and not noclip:
+        for platform in platforms:
+            if not getattr(platform, 'physics', True):
+                continue
+            vel[0] = vel[0]*getattr(platform,'friction',friction)
+            vel[1] = vel[1]*getattr(platform,'friction',friction)
 
     ### [GameLoop/Apply movement]
     if abs(vel[0]) < max_speed or vel[0] * pressedX < 0:
@@ -156,13 +207,9 @@ def frame(frame):
     ### [GameLoop/Camera]
     updateCamera()
 
-    font = gl.pygame.font.SysFont('FreeSans',20,True)
-    surf = font.render(meta['name'],1,(255,255,255))
-    game.screen.blit(surf,(5,5))
-
-    font = gl.pygame.font.SysFont('FreeSans',12,False)
-    surf = font.render(meta['description'],1,(255,255,255))
-    game.screen.blit(surf,(10,30))
+    drawText(meta['name'], 5, 5, 20)
+    drawText(meta['description'], 10, 30, 12)
+    if help: drawText(helptext, 5, 50, 13)
 
 ### [Editor Mouse]
 @game.on('mouseDown')
@@ -239,12 +286,11 @@ def mouseUp(event):
     startPos = None
     editedObj = None
 
-### [Keyboard Events/Event]
+### [Keyboard Events]
 @game.on('keyDown')
 def keyDown(key):  # sourcery skip: low-code-quality
     key = key['key']
-    global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip, editor, meta, objects
-    ### [Keyboard Events/w]
+    global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip, editor, meta, objects, clipboard, help
     if key == gl.pygame.K_w:
         if flight:
             pressedY += 1
@@ -256,12 +302,12 @@ def keyDown(key):  # sourcery skip: low-code-quality
             cy += vel[1]
             updateCamera()
 
-    ### [Keyboard Events/s]
     elif key == gl.pygame.K_s:
-        if flight:
+        if editor and gl.pygame.key.get_mods() & gl.pygame.key.MOD_CTRL:
+            Level('level.txt').save_level(meta, objects)
+        elif flight:
             pressedY -= 1
 
-    ### [Keyboard Events/Space]
     elif key == gl.pygame.K_SPACE:
         if dashes:
             dashes -= 1
@@ -272,36 +318,25 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
             updateCamera()
 
-    ### [Keyboard Events/a]
     elif key == gl.pygame.K_a:
         pressedX += 1
 
-    ### [Keyboard Events/d]
     elif key == gl.pygame.K_d:
         pressedX -= 1
 
-    ### [Keyboard Events/q]
     elif key == gl.pygame.K_q:
         game.running = False
 
-    ### [Keyboard Events/f]
     elif key == gl.pygame.K_f:
         flight = not flight
 
-    ### [Keyboard Events/p]
     elif key == gl.pygame.K_p:
         noclip = not noclip
 
-    ### [Keyboard Events/e]
     elif key == gl.pygame.K_e:
         editor = not editor
         flight = editor
 
-    ### [Keyboard Events/o]
-    elif key == gl.pygame.K_o:
-        Level('level.txt').save_level(meta, objects)
-    
-    ### [Keyboard Events/l]
     elif key == gl.pygame.K_l:
         for sprite in objects:
             if sprite == player: continue
@@ -319,31 +354,50 @@ def keyDown(key):  # sourcery skip: low-code-quality
             object = Platform((x,y),width,height,attr)
             object.sprite.updateTexture(texture)
 
-    ### [Keyboard Events/delete]
     elif key == gl.pygame.K_DELETE:
         if not editor: return
         mouse_pos = gl.pygame.mouse.get_pos()
         pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
         pos = round(pos[0]), round(pos[1])
 
+        print(objects)
         for sprite in objects:
             if sprite.collidepoint(pos):
                 game.sprites.remove(sprite)
                 objects.remove(sprite)
                 break
 
-    ### [Keyboard Events/c]
     elif key == gl.pygame.K_c:
         if not editor: return
         mouse_pos = gl.pygame.mouse.get_pos()
         pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
         pos = round(pos[0]), round(pos[1])
 
+
         for sprite in objects:
             if sprite.collidepoint(pos):
-                setattr(sprite, 'physics', not getattr(sprite, 'physics', True))
-                sprite.object.attributes['physics'] = getattr(sprite, 'physics')
-                print(sprite.object.attributes['physics'])
+                    if gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL:
+                        clipboard = [sprite.pos[0]-pos[0], sprite.pos[1]-pos[1], sprite.width,sprite.height,sprite.object.attributes,sprite.texture]
+
+                    else:
+                        setattr(sprite, 'physics', not getattr(sprite, 'physics', True))
+                        sprite.object.attributes['physics'] = getattr(sprite, 'physics')
+                        print(sprite.object.attributes['physics'])
+                    break
+
+    elif key == gl.pygame.K_v:
+        if not editor: return
+        mouse_pos = gl.pygame.mouse.get_pos()
+        pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
+        pos = round(pos[0]), round(pos[1])
+
+        if gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL and clipboard:
+            x,y,width,height,attributes,texture = clipboard
+            object = Platform((pos[0]+x,pos[1]+y),width,height,attributes)
+            object.sprite.updateTexture(texture)
+
+    elif key == gl.pygame.K_h:
+        help = not help
 
 @game.on('keyUp')
 def keyUp(key):
