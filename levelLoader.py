@@ -87,7 +87,7 @@ class Level:
                 file.write(f'{object.width}:')
                 file.write(f'{object.height}:')
                 file.write(f'{attr}:')
-                file.write(f'{object.texture}')
+                file.write(f'{object.sprite.texture}')
                 file.write('\n')
 
             # Write EOF
