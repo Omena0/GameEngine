@@ -38,7 +38,6 @@ noclip  = False
 editor  = False
 help    = False
 paint = False
-timer = False
 
 normalHelp = """--- Movement ---
 w - Jump/Up
@@ -146,13 +145,12 @@ Platform((30,30), 20)
 
 ### [Utils]
 def updateCamera():
-    global cx,cy,vel,time,timer
+    global cx,cy,vel,time
     if cy <= -100:
         cy = 0
         cx = 0
         vel = [0,0]
         time = None
-        timer = None
 
     for sprite in game.sprites:
         if sprite == player:
@@ -265,11 +263,10 @@ def frame(frame):  # sourcery skip: low-code-quality
     else:
         drawText('Paint: OFF', 5, 110, 13)
 
-    if timer:
-        if time:
-            drawText(f'Level completed in {time} seconds.', 5, 130, 13)
-        else:
-            drawText(f'Timer: {round(t.time()-startTime,2) if startTime else 0}', 5, 130, 13)
+    if time:
+        drawText(f'Level completed in {time} seconds.', 5, 130, 13)
+    else:
+        drawText(f'Timer: {round(t.time()-startTime,2) if startTime else 0}', 5, 130, 13)
 
     if help:
         if editor:
@@ -385,9 +382,9 @@ def mouseUp(event):
 def keyDown(key):  # sourcery skip: low-code-quality
     key = key['key']
     global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip, editor
-    global meta, objects, clipboard, help, paint, selectedCol, timer, startTime
+    global meta, objects, clipboard, help, paint, selectedCol, startTime
 
-    if timer and not startTime:
+    if not startTime:
         startTime = t.time()
 
     match key:
@@ -514,10 +511,6 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 selectedCol = colorchooser.askcolor(selectedCol, title = "Select Color")[0]
             else:
                 paint = not paint
-
-        case gl.pygame.K_t:
-            timer = not timer
-            startTime = None
 
 @game.on('keyUp')
 def keyUp(key):
