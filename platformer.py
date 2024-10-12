@@ -384,7 +384,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
     global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip, editor
     global meta, objects, clipboard, help, paint, selectedCol, startTime
 
-    if not startTime:
+    if not startTime and key in {gl.pygame.K_w,gl.pygame.K_a,gl.pygame.K_s,gl.pygame.K_d,gl.pygame.K_SPACE,gl.pygame.K_UP}:
         startTime = t.time()
 
     match key:
