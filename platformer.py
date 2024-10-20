@@ -3,8 +3,11 @@ from levelLoader import Level
 from ast import literal_eval
 import engine as gl
 import time as t
+import math
 gl.pygame.init()
 
+def sigmoidf(x):
+    return 1 / (1 + math.exp(-x))
 
 def convert_type(s):
     try:
@@ -13,13 +16,17 @@ def convert_type(s):
         return s
 
 ### [Vars/Physics]
-jumpForce = 0.9
+jumpForce = 0.8
+gBendAmount = 4
+gAccelerationAmount = 5
+cameraFollowDistance = 4
+universalPrecision = 7
 dashForce = 0.85
 gravity = 0.04
-acceleration = 40
-max_speed = 0.7
-air_resistance = 0.98
-friction = 0.97
+acceleration = 20
+max_speed = 1.2
+air_resistance = 0.99
+friction = 0.98
 maxJumps = 2
 maxDashes = 1
 
@@ -122,7 +129,7 @@ class Object:
 class Platform(Object):
     def __init__(self, pos, width, height=3, attributes=None, shader = None):
         if attributes is None:
-            attributes = {"bounciness": 0.8, "physics": True, "friction": 0.97}
+            attributes = {"bounciness": 0.5, "physics": True, "friction": friction}
 
         super().__init__(pos, width, height, attributes, shader)
         self.sprite.platform = self
@@ -156,8 +163,12 @@ def updateCamera():
         if sprite == player:
             sprite.x = game.width // 2
             sprite.y = game.height // 3*2
-            sprite.x -= vel[0]*2
-            sprite.y -= vel[1]*3
+
+            dx = vel[0]*cameraFollowDistance
+            dy = vel[1]*(cameraFollowDistance+1)
+
+            sprite.x -= dx
+            sprite.y -= dy
             continue
 
         sprite.x = sprite.pos[0] + cx
@@ -189,8 +200,8 @@ def frame(frame):  # sourcery skip: low-code-quality
     global cx,cy, pressedX, jumps, dashes, finishTime, startTime
 
     ### [GameLoop/Apply velocity]
-    vel[0] = round(vel[0],10)
-    vel[1] = round(vel[1],10)
+    vel[0] = round(vel[0],universalPrecision)
+    vel[1] = round(vel[1],universalPrecision)
 
     vel[0] = vel[0]*air_resistance
     vel[1] = vel[1]*air_resistance
@@ -198,23 +209,11 @@ def frame(frame):  # sourcery skip: low-code-quality
     cx += vel[0]
     cy += vel[1]
 
-    ### [GameLoop/Apply friction]
-    platforms = player.collides_with(objects)
-    if platforms and not noclip:
-        for platform in platforms:
-            if not getattr(platform, 'physics', True):
-                continue
-            vel[0] = vel[0]*getattr(platform,'friction',friction)
-            vel[1] = vel[1]*getattr(platform,'friction',friction)
-
-            if platform.texture[0][0] == (0,255,0) and not finishTime:
-                finishTime = round(t.time()-startTime,2)
-
     ### [GameLoop/Apply movement]
     if abs(vel[0]) < max_speed or vel[0] * pressedX < 0:
         vel[0] += pressedX/acceleration
 
-    if abs(vel[1]) < max_speed or vel[1] * pressedY < 0:
+    if (abs(vel[1]) < max_speed or vel[1] * pressedY < 0) and flight:
         vel[1] += pressedY/acceleration
 
     if (pressedX or pressedY) and not startTime:
@@ -227,20 +226,30 @@ def frame(frame):  # sourcery skip: low-code-quality
             if not getattr(platform, 'physics', True):
                 continue
 
+            vel[0] = vel[0]*getattr(platform,'friction',friction)
+            vel[1] = vel[1]*getattr(platform,'friction',friction)
+
+            if platform.texture[0][0] == (0,255,0) and not finishTime:
+                finishTime = round(t.time()-startTime,2)
+
             jumps = maxJumps
             dashes = maxDashes
             vel[1] *= -platform.bounciness
             vel[1] = int(vel[1])
 
-            while player.collides_with(objects):
-                cy += 0.01
-                updateCamera()
+            platforms = player.collides_with(objects)
+            for platform in platforms:
+                if not getattr(platform, 'physics', True): continue
+                while player.collides_with(platform):
+                    cy += 0.01
+                    updateCamera()
 
             cy -= 0.015
 
     ### [GameLoop/Gravity]
     if not flight:
-        vel[1] -= gravity
+        g = round(gravity * (-pressedY/gBendAmount+1+(-vel[1]/gAccelerationAmount)),3)
+        vel[1] -= g
 
     ### [GameLoop/Camera]
     updateCamera()
@@ -392,30 +401,27 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
     match key:
         case gl.pygame.K_w:
+            pressedY += 1
             if flight:
-                pressedY += 1
                 cy += 1
 
             elif jumps:
                 jumps -= 1
                 vel[1] += jumpForce
                 cy += vel[1]
-                updateCamera()
 
         case gl.pygame.K_UP:
             if jumps:
                 jumps -= 1
                 vel[1] += jumpForce
                 cy += vel[1]
-                updateCamera()
 
         case gl.pygame.K_s:
             if editor and gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL:
                 Level('level.txt').save_level(meta, objects)
                 print('Saved level')
 
-            elif flight:
-                pressedY -= 1
+            pressedY -= 1
 
         case gl.pygame.K_SPACE:
             if not dashes: return
@@ -425,8 +431,6 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 vel[0] += dashForce * pressedX
             else:
                 vel[0] += dashForce * (int(vel[0] > 0)-0.5)*2
-
-            updateCamera()
 
         case gl.pygame.K_a:
             pressedX += 1
@@ -458,13 +462,13 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
             meta, newObjects = Level('level.txt').load_level()
             for object in newObjects:
-                x,y,width,height,attr,paint = object
+                x,y,width,height,attr,texture = object
                 x,y,width,height = int(x),int(y),int(width),int(height)
                 attr = dict([(i.split('=')[0], convert_type(i.split('=')[1])) for i in attr.split(',')])
-                paint = convert_type(paint)
+                texture = convert_type(texture)
 
                 object = Platform((x,y),width,height,attr)
-                object.sprite.updateTexture(paint)
+                object.sprite.updateTexture(texture)
 
         case gl.pygame.K_DELETE:
             if not editor: return
@@ -517,6 +521,8 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 paint = not paint
 
 
+    updateCamera()
+
 @game.on('keyUp')
 def keyUp(key):
     key = key['key']
@@ -525,9 +531,9 @@ def keyUp(key):
         pressedX -= 1
     if key == gl.pygame.K_d:
         pressedX += 1
-    if key == gl.pygame.K_w and flight:
+    if key == gl.pygame.K_w:
         pressedY -= 1
-    if key == gl.pygame.K_s and flight:
+    if key == gl.pygame.K_s:
         pressedY += 1
 
 # Run the game
