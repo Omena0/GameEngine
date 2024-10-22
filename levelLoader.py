@@ -13,7 +13,7 @@ class Level:
         2: <total number of objects>:<format_number>:<game_version>
         3: <level_name>:<level_description>
         4: magic: "SECTOR:DATA"
-        5: <object_x>:<object_y>:<object_width>:<object_height>:<object_attributes>:<object_texture>
+        5: <objet_type>:<object_x>:<object_y>:<object_width>:<object_height>:<object_attributes>:<object_texture>
         ...
         6: magic: "EOF"
     """
@@ -80,14 +80,15 @@ class Level:
             # Write objects
             for sprite in objects:
                 object = sprite.object
-                attr = ''.join(f'{key}={value},' for key, value in object.attributes.items()).removesuffix(',')
+                attr = ''.join(f'{key}={str(value).replace(',','~')},' for key, value in object.attributes.items()).removesuffix(',').replace(', ',',').replace('~ ','~')
 
-                file.write(f'{object.x}:')
-                file.write(f'{object.y}:')
-                file.write(f'{object.width}:')
-                file.write(f'{object.height}:')
+                file.write(f'{object.type}:')
+                file.write(f'{int(object.x)}:')
+                file.write(f'{int(object.y)}:')
+                file.write(f'{int(object.width)}:')
+                file.write(f'{int(object.height)}:')
                 file.write(f'{attr}:')
-                file.write(f'{object.sprite.texture}')
+                file.write(f'{object.sprite.texture}'.replace(', ',','))
                 file.write('\n')
 
             # Write EOF

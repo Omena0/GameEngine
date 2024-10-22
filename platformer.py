@@ -2,6 +2,7 @@ from tkinter import colorchooser
 from levelLoader import Level
 from ast import literal_eval
 import engine as gl
+import pygame_textinput
 import time as t
 import math
 gl.pygame.init()
@@ -20,7 +21,7 @@ jumpForce = 0.8
 gBendAmount = 4
 gAccelerationAmount = 5
 cameraFollowDistance = 4
-universalPrecision = 7
+universalPrecision = 5
 dashForce = 0.85
 gravity = 0.04
 acceleration = 20
@@ -29,6 +30,7 @@ air_resistance = 0.99
 friction = 0.98
 maxJumps = 2
 maxDashes = 1
+parachuteResistance = 0.9
 
 ### [Vars/Init]
 jumps = 0
@@ -38,13 +40,18 @@ pressedX = 0
 pressedY = 0
 startTime = 0
 finishTime = 0
+parachute = False
 
 ### [Vars/Flags]
-flight  = False
-noclip  = False
-editor  = False
-help    = False
-paint = False
+flight   = False
+noclip   = False
+editor   = False
+help     = False
+paint    = False
+debug    = False
+typing   = False
+onGround = False
+hide_gui = False
 
 normalHelp = """--- Movement ---
 w - Jump/Up
@@ -59,7 +66,8 @@ f  - Fly
 n - Noclip
 e - Editor
 h - Help
-p - Paint"""
+p - Paint
+r - Reset"""
 
 editorHelp = """--- Editor ---
 Left Mouse      - Create object (drag)
@@ -92,7 +100,7 @@ objects = []
 meta = {"name": "Unnamed", "description": "No description"}
 
 # Initialize the game
-game = gl.Game("Platformer", (75,50),res=8,max_fps=60)
+game = gl.Game("Platformer", (75,50),res=8,max_fps=62)
 
 cx,cy = 0,0
 
@@ -107,7 +115,8 @@ player = gl.Sprite((game.width // 2, game.height // 3*2), player_texture).add(ga
 
 ### [Object()]
 class Object:
-    def __init__(self, pos, width, height, attributes, shader = None):
+    def __init__(self, type, pos, width, height, attributes, shader = None):
+        self.type = type
         self.x = int(pos[0])
         self.y = int(pos[1])
         self.pos = self.x,self.y
@@ -115,8 +124,14 @@ class Object:
         self.height = height
         self.shader = shader
         self.attributes = attributes
-        self.texture = self.gen_texture()
-        self.sprite = gl.Sprite(self.pos, self.texture).add(game)
+
+        if hasattr(self,'gen_texture'):
+            self.texture = self.gen_texture()
+            self.sprite = gl.Sprite(self.pos, self.texture).add(game)
+        else:
+            self.texture = [[]]
+            self.sprite = gl.Sprite(self.pos, self.texture, self.render).add(game)
+
 
         self.sprite.object = self
 
@@ -131,7 +146,7 @@ class Platform(Object):
         if attributes is None:
             attributes = {"bounciness": 0.5, "physics": True, "friction": friction}
 
-        super().__init__(pos, width, height, attributes, shader)
+        super().__init__('platform', pos, width, height, attributes, shader)
         self.sprite.platform = self
 
     def gen_texture(self):
@@ -147,64 +162,82 @@ class Platform(Object):
         self.y = y
         updateCamera()
 
+### [Text(Object)]
+class Text(Object):
+    def __init__(self, pos, text, size=10, color=(255,255,255), bold=False, italic=False, input=False):
+        self.input = input
+        self.attributes = {"text": text, "size": size, "color": color, "bold": bold, "italic": italic, "physics": False}
+        super().__init__('text', pos, *gl.textSize(text, size), self.attributes, None)
+        self.sprite.text = self
+
+        if self.input:
+            self.textinput = pygame_textinput.TextInputManager()
+            @game.on('scroll')
+            def scroll(event):
+                y = int(event['y'])
+                self.attributes['size'] += y
+
+            if 'all' in game.events:
+                game.events['all'].append(self.textinput.update)
+            else:
+                game.events['all'] = [self.textinput.update]
+
+    def render(self):
+        if self.input and not typing:
+            self.attributes['text'] = self.textinput.value
+            game.events['all'].remove(self.textinput.update)
+            del self.textinput
+            self.input = False
+
+        if self.input:
+            self.attributes['text'] = f'{self.textinput.left}|{self.textinput.right}'
+
+        gl.drawText(self.attributes['text'], self.sprite.x*game.res, self.sprite.y*game.res, self.attributes['size'], self.attributes['color'], self.attributes['bold'], self.attributes['italic'])
+
 # Spawns a platform so you dont fall into the void instantly
 Platform((30,30), 20)
 
 ### [Utils]
+def respawn():
+    global cx,cy,vel,startTime
+    cy = 0
+    cx = 0
+    vel = [0,0]
+    startTime = None
+    toast('You died.')
+
 def updateCamera():
     global cx,cy,vel,startTime
     if cy <= -60:
-        cy = 0
-        cx = 0
-        vel = [0,0]
-        startTime = None
+        respawn()
 
-    for sprite in game.sprites:
-        if sprite == player:
-            sprite.x = game.width // 2
-            sprite.y = game.height // 3*2
+    # Player movement
+    player.x = game.width // 2
+    player.y = game.height // 3*2
 
-            dx = vel[0]*cameraFollowDistance
-            dy = vel[1]*(cameraFollowDistance+1)
+    dx = vel[0]*cameraFollowDistance
+    dy = vel[1]*(cameraFollowDistance+1)
 
-            sprite.x -= dx
-            sprite.y -= dy
-            continue
+    player.x -= dx
+    player.y -= dy
 
+    # Object movement
+    for sprite in objects:
         sprite.x = sprite.pos[0] + cx
         sprite.y = sprite.pos[1] + cy
 
-def drawText(text:str,x:int,y:int,size=10,color=(255,255,255),bold=False,italic=False):
-    font = gl.pygame.font.SysFont('FreeSans',size,bold,italic)
-    i = 0
-    for line in text.splitlines():
-        if line:
-            surf = font.render(line,1,color)
-            game.screen.blit(surf,(x,y+size*i))
-            i += 1.1
-        else:
-            i += 0.5
-
-def floodfill(texture, pos, newColor, oldColor):
-    if texture[pos[0]][pos[1]] != oldColor: return
-    texture[pos[0]][pos[1]] = newColor
-
-    if pos[0] > 0: floodfill(texture, (pos[0]-1, pos[1]), newColor, oldColor)
-    if pos[0] < len(texture)-1: floodfill(texture, (pos[0]+1, pos[1]), newColor, oldColor)
-    if pos[1] > 0: floodfill(texture, (pos[0], pos[1]-1), newColor, oldColor)
-    if pos[1] < len(texture[0])-1: floodfill(texture, (pos[0], pos[1]+1), newColor, oldColor)
+def toast(text):
+    gl.Toast((game.width*game.res-5,game.height*game.res-5),text,20)
 
 ### [GameLoop/Event]
 @game.on('frame')
 def frame(frame):  # sourcery skip: low-code-quality
-    global cx,cy, pressedX, jumps, dashes, finishTime, startTime
+    global cx,cy, pressedX, jumps, dashes, finishTime, startTime, onGround
 
     ### [GameLoop/Apply velocity]
-    vel[0] = round(vel[0],universalPrecision)
-    vel[1] = round(vel[1],universalPrecision)
 
-    vel[0] = vel[0]*air_resistance
-    vel[1] = vel[1]*air_resistance
+    vel[0] = vel[0] * (parachuteResistance if parachute else air_resistance)
+    vel[1] = vel[1] * (parachuteResistance if parachute else air_resistance)
 
     cx += vel[0]
     cy += vel[1]
@@ -220,71 +253,101 @@ def frame(frame):  # sourcery skip: low-code-quality
         startTime = t.time()
 
     ### [GameLoop/Collisions]
-    platforms = player.collides_with(objects)
-    if platforms and not noclip:
-        for platform in platforms:
-            if not getattr(platform, 'physics', True):
+    onGround = False
+    collisions = player.collides_with(objects)
+    if collisions and not noclip:
+        for sprite in collisions:
+            object = sprite.object
+            if object.type != 'platform':
                 continue
 
-            vel[0] = vel[0]*getattr(platform,'friction',friction)
-            vel[1] = vel[1]*getattr(platform,'friction',friction)
+            if not getattr(sprite, 'physics', True):
+                continue
 
-            if platform.texture[0][0] == (0,255,0) and not finishTime:
+            onGround = True
+
+            vel[0] = vel[0]*getattr(sprite,'friction',friction)
+            vel[1] = vel[1]*getattr(sprite,'friction',friction)
+
+            if sprite.texture[0][0] == (0,255,0) and not finishTime:
                 finishTime = round(t.time()-startTime,2)
+                toast(f'Level competed in {finishTime} Seconds.')
 
             jumps = maxJumps
             dashes = maxDashes
-            vel[1] *= -platform.bounciness
+            vel[1] *= -sprite.bounciness
             vel[1] = int(vel[1])
 
-            platforms = player.collides_with(objects)
-            for platform in platforms:
-                if not getattr(platform, 'physics', True): continue
-                while player.collides_with(platform):
+            collisions = player.collides_with(objects)
+            for sprite in collisions:
+                if not getattr(sprite, 'physics', True): continue
+                while player.collides_with(sprite):
                     cy += 0.01
                     updateCamera()
 
             cy -= 0.015
 
     ### [GameLoop/Gravity]
-    if not flight:
-        g = round(gravity * (-pressedY/gBendAmount+1+(-vel[1]/gAccelerationAmount)),3)
+    if not flight and not onGround:
+        g = round(gravity * (-pressedY/gBendAmount+1+(-vel[1]/gAccelerationAmount)),3) * (0.5 if parachute else 1)
         vel[1] -= g
+
+    # Round pos and vel
+    vel[0] = round(vel[0], universalPrecision)
+    vel[1] = round(vel[1], universalPrecision)
+
+    cx = round(cx, universalPrecision)
+    cy = round(cy, universalPrecision)
+
+    if abs(vel[0]) < 0.01: vel[0] = 0
+    if abs(vel[1]) < 0.01: vel[1] = 0
 
     ### [GameLoop/Camera]
     updateCamera()
 
-    drawText(meta['name'], 5, 5, 20)
-    drawText(meta['description'], 10, 30, 12)
+    # GUI
+    if not hide_gui:
+        gl.drawText(meta['name'], 5, 5, 20)
+        gl.drawText(meta['description'], 10, 30, 12)
 
-    modeText = f'Mode: {'Editor - ' if editor else ""}{mode or "None"}'
-    drawText(modeText, 5, 50, 13)
+        modeText = f'Mode: {'Editor - ' if editor else ""}{mode or "None"}'
+        gl.drawText(modeText, 5, 50, 13)
 
-    if noclip:
-        drawText('Noclip: ON', 5, 70, 13)
-    else:
-        drawText('Noclip: OFF', 5, 70, 13)
-
-    if flight:
-        drawText('Flight: ON', 5, 90, 13)
-    else:
-        drawText('Flight: OFF', 5, 90, 13)
-
-    if paint:
-        drawText('Paint: ON', 5, 110, 13)
-    else:
-        drawText('Paint: OFF', 5, 110, 13)
-
-    if finishTime:
-        drawText(f'Level completed in {finishTime} seconds.', 5, 130, 13)
-    else:
-        drawText(f'Timer: {round(t.time()-startTime,2) if startTime else 0}', 5, 130, 13)
-
-    if help:
-        if editor:
-            drawText(editorHelp, 5, 150, 15)
+        if noclip:
+            gl.drawText('Noclip: ON', 5, 70, 13)
         else:
-            drawText(normalHelp, 5, 150, 15)
+            gl.drawText('Noclip: OFF', 5, 70, 13)
+
+        if flight:
+            gl.drawText('Flight: ON', 5, 90, 13)
+        else:
+            gl.drawText('Flight: OFF', 5, 90, 13)
+
+        if paint:
+            gl.drawText('Paint: ON', 5, 110, 13)
+        else:
+            gl.drawText('Paint: OFF', 5, 110, 13)
+
+        if finishTime:
+            gl.drawText(f'Level completed in {finishTime} seconds.', 5, 130, 13)
+        else:
+            gl.drawText(f'Timer: {round(t.time()-startTime,2) if startTime else 0}', 5, 130, 13)
+
+        if help:
+            if editor:
+                gl.drawText(editorHelp, 5, 150, 15)
+            else:
+                gl.drawText(normalHelp, 5, 150, 15)
+
+        if debug:
+            gl.drawText('--- Debug ---', 5, 150, 14)
+            gl.drawText(f'X: {str(cx):<11} Y: {cy}', 5, 166, 14)
+            gl.drawText(f'VX: {str(vel[0]):<10} VY: {vel[1]}', 5, 180, 14)
+            gl.drawText(f'Jumps: {jumps}', 5, 196, 14)
+            gl.drawText(f'Dashes: {dashes}', 5, 210, 14)
+            gl.drawText(f'OnGround: {onGround}', 5, 226, 14)
+            gl.drawText(f'PressedX: {pressedX}', 5, 244, 14)
+            gl.drawText(f'PressedY: {pressedY}', 5, 260, 14)
 
 
 ### [Editor Mouse]
@@ -303,10 +366,10 @@ def mouseDown(event):  # sourcery skip: low-code-quality
                     startPos = pos[0]-sprite.pos[0], pos[1]-sprite.pos[1]
 
                     # Rectangle mode
-                    if gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL:
+                    if gl.modPressed('ctrl'):
                         col = sprite.texture[startPos[0]][startPos[1]]
 
-                        floodfill(sprite.texture, startPos, selectedCol, col)
+                        gl.floodfill(sprite.texture, startPos, selectedCol, col)
 
                     # Pixel mode
                     else:
@@ -392,15 +455,21 @@ def mouseUp(event):
 ### [Keyboard Events]
 @game.on('keyDown')
 def keyDown(key):  # sourcery skip: low-code-quality
+    global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip
+    global meta, objects, clipboard, help, paint, selectedCol, hide_gui
+    global finishTime, parachute, vel, debug, editor, startTime, typing
     key = key['key']
-    global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip, editor
-    global meta, objects, clipboard, help, paint, selectedCol, startTime
+    if typing:
+        if key == gl.pygame.K_RETURN:
+            typing = False
+        return
 
     if not startTime and key in {gl.pygame.K_w,gl.pygame.K_a,gl.pygame.K_s,gl.pygame.K_d,gl.pygame.K_SPACE,gl.pygame.K_UP}:
         startTime = t.time()
 
     match key:
         case gl.pygame.K_w:
+            if gl.pygame.key.get_mods(): return
             pressedY += 1
             if flight:
                 cy += 1
@@ -411,20 +480,23 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 cy += vel[1]
 
         case gl.pygame.K_UP:
+            if gl.pygame.key.get_mods(): return
             if jumps:
                 jumps -= 1
                 vel[1] += jumpForce
                 cy += vel[1]
 
         case gl.pygame.K_s:
-            if editor and gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL:
+            if editor and gl.modPressed('ctrl'):
                 Level('level.txt').save_level(meta, objects)
-                print('Saved level')
+                toast('Saved.')
+
+            if gl.pygame.key.get_mods(): return
 
             pressedY -= 1
 
         case gl.pygame.K_SPACE:
-            if not dashes: return
+            if not (dashes or flight): return
 
             dashes -= 1
             if pressedX:
@@ -433,9 +505,15 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 vel[0] += dashForce * (int(vel[0] > 0)-0.5)*2
 
         case gl.pygame.K_a:
+            if gl.pygame.key.get_mods(): return
             pressedX += 1
 
         case gl.pygame.K_d:
+            if gl.modPressed('ctrl') and gl.modPressed('shift'):
+                debug = not debug
+                toast(f'Debug: {debug}')
+
+            if gl.pygame.key.get_mods(): return
             pressedX -= 1
 
         case gl.pygame.K_q:
@@ -443,16 +521,21 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
         case gl.pygame.K_f:
             flight = not flight
+            toast(f'Flight: {flight}')
 
         case gl.pygame.K_n:
             noclip = not noclip
+            toast(f'Noclip: {noclip}')
 
         case gl.pygame.K_e:
             editor = not editor
+            toast(f'Editor: {editor}')
+            if flight != editor:
+                toast(f'Flight: {flight}')
             flight = editor
 
         case gl.pygame.K_l:
-            if not gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL: return
+            if not gl.modPressed('ctrl'): return
 
             for sprite in objects:
                 if sprite == player: continue
@@ -462,13 +545,21 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
             meta, newObjects = Level('level.txt').load_level()
             for object in newObjects:
-                x,y,width,height,attr,texture = object
+                type,x,y,width,height,attr,texture = object
                 x,y,width,height = int(x),int(y),int(width),int(height)
-                attr = dict([(i.split('=')[0], convert_type(i.split('=')[1])) for i in attr.split(',')])
+
+                attr = dict([(i.split('=')[0], convert_type(i.split('=')[1].replace('~',','))) for i in attr.split(',')])
                 texture = convert_type(texture)
 
-                object = Platform((x,y),width,height,attr)
-                object.sprite.updateTexture(texture)
+                if type == 'platform':
+                    object = Platform((x,y),width,height,attr)
+                    object.sprite.updateTexture(texture)
+                elif type == 'text':
+                    object = Text((x,y),attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
+
+                print(x,y,width,height,attr)
+
+            toast('Level loaded.')
 
         case gl.pygame.K_DELETE:
             if not editor: return
@@ -480,25 +571,29 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 if sprite.collidepoint(pos):
                     game.sprites.remove(sprite)
                     objects.remove(sprite)
+                    toast('[Editor] Object deleted.')
                     break
 
         case gl.pygame.K_c:
-            if not editor: return
-            mouse_pos = gl.pygame.mouse.get_pos()
-            pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
-            pos = round(pos[0]), round(pos[1])
+            if not editor:
+                parachute = not parachute
 
+            else:
+                mouse_pos = gl.pygame.mouse.get_pos()
+                pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
+                pos = round(pos[0]), round(pos[1])
 
-            for sprite in objects:
-                if sprite.collidepoint(pos):
-                        if gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL:
-                            clipboard = [sprite.pos[0]-pos[0], sprite.pos[1]-pos[1], sprite.width,sprite.height,sprite.object.attributes,sprite.texture]
+                for sprite in objects:
+                    if sprite.collidepoint(pos):
+                            if gl.modPressed('ctrl'):
+                                clipboard = [sprite.pos[0]-pos[0], sprite.pos[1]-pos[1], sprite.width,sprite.height,sprite.object.attributes,sprite.texture]
+                                toast('[Editor] Object copied.')
 
-                        else:
-                            setattr(sprite, 'physics', not getattr(sprite, 'physics', True))
-                            sprite.object.attributes['physics'] = getattr(sprite, 'physics')
-                            print(sprite.object.attributes['physics'])
-                        break
+                            else:
+                                setattr(sprite, 'physics', not getattr(sprite, 'physics', True))
+                                sprite.object.attributes['physics'] = getattr(sprite, 'physics')
+                                toast(f'[Editor] Object physics: {sprite.object.attributes['physics']}')
+                            break
 
         case gl.pygame.K_v:
             if not editor: return
@@ -506,35 +601,74 @@ def keyDown(key):  # sourcery skip: low-code-quality
             pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
             pos = round(pos[0]), round(pos[1])
 
-            if gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL and clipboard:
+            if gl.modPressed('ctrl') and clipboard:
                 x,y,width,height,attributes,paint = clipboard
                 object = Platform((pos[0]+x,pos[1]+y),width,height,attributes)
                 object.sprite.updateTexture(paint)
+                toast('[Editor] Object pasted.')
 
         case gl.pygame.K_h:
             help = not help
 
         case gl.pygame.K_p:
-            if gl.pygame.key.get_mods() & gl.pygame.KMOD_CTRL:
+            if gl.modPressed('ctrl'):
                 selectedCol = colorchooser.askcolor(selectedCol, title = "Select Color")[0]
             else:
                 paint = not paint
 
+        case gl.pygame.K_r:
+            respawn()
+            ### [Vars/Init]
+            jumps = 0
+            dashes = 0
+            vel = [0,0]
+            pressedX = 0
+            pressedY = 0
+            startTime = 0
+            finishTime = 0
+
+            ### [Vars/Flags]
+            flight  = False
+            noclip  = False
+            editor  = False
+            help    = False
+            paint = False
+            toast('State Reset.')
+
+        case gl.pygame.K_t:
+            mouse_pos = gl.pygame.mouse.get_pos()
+            pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
+            pos = round(pos[0]), round(pos[1])
+
+            typing = True
+
+            Text(pos,'', input=True)
+
+        case gl.pygame.K_F1:
+            hide_gui = not hide_gui
+            if hide_gui:
+                toast('GUI hidden.')
+            else:
+                toast('GUI shown.')
 
     updateCamera()
 
 @game.on('keyUp')
 def keyUp(key):
+    global cx, cy, pressedX, pressedY, parachute, typing
+    if typing: return
     key = key['key']
-    global cx, cy, pressedX, pressedY
     if key == gl.pygame.K_a:
         pressedX -= 1
-    if key == gl.pygame.K_d:
+    if key == gl.pygame.K_d and not (gl.modPressed('ctrl') and gl.modPressed('shift')):
         pressedX += 1
     if key == gl.pygame.K_w:
         pressedY -= 1
-    if key == gl.pygame.K_s:
+    if key == gl.pygame.K_s and not (gl.modPressed('ctrl') and editor):
         pressedY += 1
+
+    if key == gl.pygame.K_c and parachute:
+        parachute = False
 
 # Run the game
 game.run()
