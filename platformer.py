@@ -5,7 +5,7 @@ import engine as gl
 import pygame_textinput
 import time as t
 import math
-import os
+
 gl.pygame.init()
 
 def sigmoidf(x):
@@ -540,9 +540,13 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 if sprite == player: continue
                 game.sprites.remove(sprite)
 
-            objects = []
+            file_name = filedialog.askopenfilename(filetypes=['Level .lvl'],initialdir='levels')
+            meta, newObjects = Level(file_name).load_level()
 
-            meta, newObjects = Level(filedialog.askopenfilename(filetypes=['Level .lvl'],initialdir='levels')).load_level()
+            startTime = None
+            finishTime = None
+            
+            objects = []
             for object in newObjects:
                 type,x,y,width,height,attr,texture = object
                 x,y,width,height = int(x),int(y),int(width),int(height)
@@ -554,9 +558,9 @@ def keyDown(key):  # sourcery skip: low-code-quality
                     object = Platform((x,y),width,height,attr)
                     object.sprite.updateTexture(texture)
                 elif type == 'text':
-                    object = Text((x,y),attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
+                    object = Text((x,y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
 
-                print(x,y,width,height,attr)
+                print(x, y, width, height, attr)
 
             toast('Level loaded.')
 
@@ -635,6 +639,8 @@ def keyDown(key):  # sourcery skip: low-code-quality
             toast('State Reset.')
 
         case gl.pygame.K_t:
+            if not editor: return
+            
             mouse_pos = gl.pygame.mouse.get_pos()
             pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
             pos = round(pos[0]), round(pos[1])
