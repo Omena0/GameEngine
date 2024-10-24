@@ -1,10 +1,11 @@
-from tkinter import colorchooser
+from tkinter import colorchooser, filedialog
 from levelLoader import Level
 from ast import literal_eval
 import engine as gl
 import pygame_textinput
 import time as t
 import math
+import os
 gl.pygame.init()
 
 def sigmoidf(x):
@@ -235,7 +236,6 @@ def frame(frame):  # sourcery skip: low-code-quality
     global cx,cy, pressedX, jumps, dashes, finishTime, startTime, onGround
 
     ### [GameLoop/Apply velocity]
-
     vel[0] = vel[0] * (parachuteResistance if parachute else air_resistance)
     vel[1] = vel[1] * (parachuteResistance if parachute else air_resistance)
 
@@ -270,7 +270,7 @@ def frame(frame):  # sourcery skip: low-code-quality
             vel[1] = vel[1]*getattr(sprite,'friction',friction)
 
             if sprite.texture[0][0] == (0,255,0) and not finishTime:
-                finishTime = round(t.time()-startTime,2)
+                finishTime = t.time()-startTime
                 toast(f'Level competed in {finishTime} Seconds.')
 
             jumps = maxJumps
@@ -329,9 +329,9 @@ def frame(frame):  # sourcery skip: low-code-quality
             gl.drawText('Paint: OFF', 5, 110, 13)
 
         if finishTime:
-            gl.drawText(f'Level completed in {finishTime} seconds.', 5, 130, 13)
+            gl.drawText(f'Level completed in {round(finishTime,3)} seconds.', 5, 130, 13)
         else:
-            gl.drawText(f'Timer: {round(t.time()-startTime,2) if startTime else 0}', 5, 130, 13)
+            gl.drawText(f'Timer: {round(t.time()-startTime,3) if startTime else 0}', 5, 130, 13)
 
         if help:
             if editor:
@@ -348,7 +348,6 @@ def frame(frame):  # sourcery skip: low-code-quality
             gl.drawText(f'OnGround: {onGround}', 5, 226, 14)
             gl.drawText(f'PressedX: {pressedX}', 5, 244, 14)
             gl.drawText(f'PressedY: {pressedY}', 5, 260, 14)
-
 
 ### [Editor Mouse]
 @game.on('mouseDown')
@@ -543,7 +542,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
             objects = []
 
-            meta, newObjects = Level('level.txt').load_level()
+            meta, newObjects = Level(filedialog.askopenfilename(filetypes=['Level .lvl'],initialdir='levels')).load_level()
             for object in newObjects:
                 type,x,y,width,height,attr,texture = object
                 x,y,width,height = int(x),int(y),int(width),int(height)
