@@ -468,7 +468,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
     match key:
         case gl.pygame.K_w:
-            if gl.pygame.key.get_mods(): return
+            if gl.modPressed('ctrl') or gl.modPressed('shift'): return
             pressedY += 1
             if flight:
                 cy += 1
@@ -490,7 +490,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 Level('level.txt').save_level(meta, objects)
                 toast('Saved.')
 
-            if gl.pygame.key.get_mods(): return
+            if gl.modPressed('ctrl') or gl.modPressed('shift'): return
 
             pressedY -= 1
 
@@ -504,7 +504,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 vel[0] += dashForce * (int(vel[0] > 0)-0.5)*2
 
         case gl.pygame.K_a:
-            if gl.pygame.key.get_mods(): return
+            if gl.modPressed('ctrl') or gl.modPressed('shift'): return
             pressedX += 1
 
         case gl.pygame.K_d:
@@ -512,8 +512,8 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 debug = not debug
                 toast(f'Debug: {debug}')
 
-            if gl.pygame.key.get_mods(): return
-            pressedX -= 1
+            else:
+                pressedX -= 1
 
         case gl.pygame.K_q:
             game.running = False
@@ -656,6 +656,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
 def keyUp(key):
     global cx, cy, pressedX, pressedY, parachute, typing
     if typing: return
+
     key = key['key']
     if key == gl.pygame.K_a:
         pressedX -= 1
