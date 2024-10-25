@@ -204,7 +204,7 @@ class Text(Object):
 # Spawns a platform so you dont fall into the void instantly
 Platform((30,30), 20)
 
-Text((30,25),'Hello world',30)
+Text((30,20),'Hello world',30)
 
 ### [Utils]
 def respawn():
