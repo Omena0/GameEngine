@@ -1,7 +1,7 @@
 import os
 
-FORMAT_NUM = 0
-VERSION = 0
+FORMAT_NUM = 1
+VERSION = 3
 
 class Level:
     """Level object
@@ -83,8 +83,8 @@ class Level:
                 attr = ''.join(f'{key}={str(value).replace(',','~')},' for key, value in object.attributes.items()).removesuffix(',').replace(', ',',').replace('~ ','~')
 
                 file.write(f'{object.type}:')
-                file.write(f'{int(object.x)}:')
-                file.write(f'{int(object.y)}:')
+                file.write(f'{sprite.x}:')
+                file.write(f'{sprite.y}:')
                 file.write(f'{int(object.width)}:')
                 file.write(f'{int(object.height)}:')
                 file.write(f'{attr}:')

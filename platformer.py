@@ -60,6 +60,7 @@ a - Left
 s - Down
 d - Right
 space - Dash
+c - Brake
 
 --- General ---
 q - Quit
@@ -184,6 +185,11 @@ class Text(Object):
                 game.events['all'] = [self.textinput.update]
 
     def render(self):
+        size = gl.textSize(self.attributes['text'],self.attributes['size'])
+        size = int(size[0])//game.res, int(size[1])//game.res
+        self.width, self.height = size
+        self.sprite.width, self.sprite.height = size
+
         if self.input and not typing:
             self.attributes['text'] = self.textinput.value
             game.events['all'].remove(self.textinput.update)
@@ -197,6 +203,8 @@ class Text(Object):
 
 # Spawns a platform so you dont fall into the void instantly
 Platform((30,30), 20)
+
+Text((30,25),'Hello world',30)
 
 ### [Utils]
 def respawn():
@@ -247,11 +255,11 @@ def frame(frame):  # sourcery skip: low-code-quality
     pressedY = 0
     if not (gl.modPressed('shift') or gl.modPressed('ctrl')):
         if gl.keyPressed('w'):
-            pressedY -= 1
+            pressedY += 1
         if gl.keyPressed('a'):
             pressedX += 1
         if gl.keyPressed('s'):
-            pressedY += 1
+            pressedY -= 1
         if gl.keyPressed('d'):
             pressedX -= 1
 
@@ -370,14 +378,16 @@ def mouseDown(event):  # sourcery skip: low-code-quality
     pos = (event['pos'][0]//game.res-cx, event['pos'][1]//game.res-cy)
     pos = round(pos[0]), round(pos[1])
 
+    # Left
     if event['button'] == 1:
         if paint and editor:
             if not selectedCol: return
             for sprite in objects:
+                if sprite.object.type != 'platform': return
                 if sprite.collidepoint(pos):
                     startPos = pos[0]-sprite.pos[0], pos[1]-sprite.pos[1]
 
-                    # Rectangle mode
+                    # Floodfill mode
                     if gl.modPressed('ctrl'):
                         col = sprite.texture[startPos[0]][startPos[1]]
 
@@ -392,19 +402,22 @@ def mouseDown(event):  # sourcery skip: low-code-quality
             mode = 'add'
             editedObj = Platform(pos,1,1)
 
+    # Middle
     elif event['button'] == 2:
         for sprite in objects:
             if sprite.collidepoint(pos):
                 startPos = sprite.pos[0]+sprite.width-1, sprite.pos[1]+sprite.height-1
                 grabPos = sprite.pos[0]-pos[0], sprite.pos[1]-pos[1]
                 mode = 'edit'
-                editedObj = sprite.platform
+                editedObj = sprite
                 break
 
+    # Right
     elif event['button'] == 3:
         for sprite in objects:
             if sprite.collidepoint(pos):
                 if paint and editor:
+                    if sprite.object.type != 'platform': return
                     startPos = pos[0]-sprite.pos[0], pos[1]-sprite.pos[1]
                     sprite.texture[startPos[0]][startPos[1]] = game.bg
 
@@ -412,7 +425,7 @@ def mouseDown(event):  # sourcery skip: low-code-quality
                     startPos = pos
                     grabPos = sprite.pos[0]-pos[0], sprite.pos[1]-pos[1]
                     mode = 'move'
-                    editedObj = sprite.platform
+                    editedObj = sprite
                     break
 
 @game.on('mouseMove')
@@ -442,15 +455,20 @@ def mouseMove(event):  # sourcery skip: low-code-quality
             editedObj.sprite.updateTexture(editedObj.gen_texture())
 
         elif mode == 'edit':
-            pos = int(pos[0]+grabPos[0]), int(pos[1]+grabPos[1])
-            editedObj.setPos(*pos)
+            if editedObj.object.type == 'platform':
+                pos = int(pos[0]+grabPos[0]), int(pos[1]+grabPos[1])
+                editedObj.setPos(*pos)
+                width = startPos[0]-pos[0]
+                height = startPos[1]-pos[1]
+                editedObj.object.width = max(width,1)
+                editedObj.object.height = max(height,1)
 
-            width = startPos[0]-pos[0]
-            height = startPos[1]-pos[1]
+                editedObj.updateTexture(editedObj.object.gen_texture())
 
-            editedObj.width = max(width,1)
-            editedObj.height = max(height,1)
-            editedObj.sprite.updateTexture(editedObj.gen_texture())
+            elif editedObj.object.type == 'text':
+                pos = gl.pygame.mouse.get_pos()
+                size = pos[1] - editedObj.y*game.res
+                editedObj.text.attributes['size'] = max(int(size),1)
 
         elif mode == 'move':
             pos = int(pos[0]+grabPos[0]), int(pos[1]+grabPos[1])
@@ -498,7 +516,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
         case gl.pygame.K_s:
             if editor and gl.modPressed('ctrl'):
-                Level('level.txt').save_level(meta, objects)
+                Level('levels/level.lvl').save_level(meta, objects)
                 toast('Saved.')
 
         case gl.pygame.K_SPACE:
@@ -549,14 +567,16 @@ def keyDown(key):  # sourcery skip: low-code-quality
             objects = []
             for object in newObjects:
                 type,x,y,width,height,attr,texture = object
-                x,y,width,height = int(x),int(y),int(width),int(height)
+                x,y,width,height = float(x),float(y),int(width),int(height)
 
                 attr = dict([(i.split('=')[0], convert_type(i.split('=')[1].replace('~',','))) for i in attr.split(',')])
                 texture = convert_type(texture)
 
                 if type == 'platform':
                     object = Platform((x,y),width,height,attr)
+                    object.sprite.setPos(x,y)
                     object.sprite.updateTexture(texture)
+
                 elif type == 'text':
                     object = Text((x,y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
 
