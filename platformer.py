@@ -242,6 +242,19 @@ def frame(frame):  # sourcery skip: low-code-quality
     cx += vel[0]
     cy += vel[1]
 
+    ## [GameLoop/Check movement]
+    pressedX = 0
+    pressedY = 0
+    if not (gl.modPressed('shift') or gl.modPressed('ctrl')):
+        if gl.keyPressed('w'):
+            pressedY -= 1
+        if gl.keyPressed('a'):
+            pressedX += 1
+        if gl.keyPressed('s'):
+            pressedY += 1
+        if gl.keyPressed('d'):
+            pressedX -= 1
+
     ### [GameLoop/Apply movement]
     if abs(vel[0]) < max_speed or vel[0] * pressedX < 0:
         vel[0] += pressedX/acceleration
@@ -468,8 +481,6 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
     match key:
         case gl.pygame.K_w:
-            if gl.modPressed('ctrl') or gl.modPressed('shift'): return
-            pressedY += 1
             if flight:
                 cy += 1
 
@@ -490,10 +501,6 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 Level('level.txt').save_level(meta, objects)
                 toast('Saved.')
 
-            if gl.modPressed('ctrl') or gl.modPressed('shift'): return
-
-            pressedY -= 1
-
         case gl.pygame.K_SPACE:
             if not (dashes or flight): return
 
@@ -503,17 +510,10 @@ def keyDown(key):  # sourcery skip: low-code-quality
             else:
                 vel[0] += dashForce * (int(vel[0] > 0)-0.5)*2
 
-        case gl.pygame.K_a:
-            if gl.modPressed('ctrl') or gl.modPressed('shift'): return
-            pressedX += 1
-
         case gl.pygame.K_d:
             if gl.modPressed('ctrl') and gl.modPressed('shift'):
                 debug = not debug
                 toast(f'Debug: {debug}')
-
-            else:
-                pressedX -= 1
 
         case gl.pygame.K_q:
             game.running = False
@@ -664,15 +664,6 @@ def keyUp(key):
     if typing: return
 
     key = key['key']
-    if key == gl.pygame.K_a:
-        pressedX -= 1
-    if key == gl.pygame.K_d and not (gl.modPressed('ctrl') and gl.modPressed('shift')):
-        pressedX += 1
-    if key == gl.pygame.K_w:
-        pressedY -= 1
-    if key == gl.pygame.K_s and not (gl.modPressed('ctrl') and editor):
-        pressedY += 1
-
     if key == gl.pygame.K_c and parachute:
         parachute = False
 
