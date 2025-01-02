@@ -2,8 +2,14 @@ from tkinter import colorchooser, filedialog
 from levelLoader import Level
 from ast import literal_eval
 import pygame_textinput
+from enum import Enum
 import engine as gl
 import time as t
+
+class ObjectType:
+    platform = 0
+    text = 1
+    trigger = 2
 
 gl.pygame.init()
 
@@ -616,13 +622,17 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 attr = dict([(i.split('=')[0], convert_type(i.split('=')[1].replace('~',','))) for i in attr.split(',')])
                 texture = convert_type(texture)
 
-                if type == 'platform':
-                    object = Platform((x,y),width,height,attr)
-                    object.sprite.setPos(x,y)
-                    object.sprite.updateTexture(texture)
+                match type:
+                    case ObjectType.platform:
+                        object = Platform((x,y),width,height,attr)
+                        object.sprite.setPos(x,y)
+                        object.sprite.updateTexture(texture)
 
-                elif type == 'text':
-                    object = Text((x,y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
+                    case ObjectType.text:
+                        object = Text((x,y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
+
+                    case ObjectType.trigger:
+                        ...
 
                 print(x, y, width, height, attr)
 
