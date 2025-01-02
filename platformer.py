@@ -1,15 +1,11 @@
 from tkinter import colorchooser, filedialog
 from levelLoader import Level
 from ast import literal_eval
-import engine as gl
 import pygame_textinput
+import engine as gl
 import time as t
-import math
 
 gl.pygame.init()
-
-def sigmoidf(x):
-    return 1 / (1 + math.exp(-x))
 
 def convert_type(s):
     try:
@@ -102,7 +98,7 @@ objects = []
 meta = {"name": "Unnamed", "description": "No description"}
 
 # Initialize the game
-game = gl.Game("Platformer", (75,50),res=8,max_fps=62)
+game = gl.Game("Platformer", (75,50),res=8,max_fps=60)
 
 cx,cy = 0,0
 
@@ -114,6 +110,28 @@ player_texture = [
 ]
 
 player = gl.Sprite((game.width // 2, game.height // 3*2), player_texture).add(game)
+
+#@game.shader
+def shader(color, x, y, frame, sprite):
+    # Smooth, continuous color transition
+    r = gl.sin(x * 0.1 + frame * 0.02) * 127 + 128
+    g = gl.sin(y * 0.1 + frame * 0.03) * 127 + 128
+    b = gl.sin((x + y) * 0.08 + frame * 0.01) * 127 + 128
+
+    # Softer wave distortion
+    wave = gl.sin(gl.sqrt(x*x + y*y) * 0.1 + frame * 0.01) * 10
+
+    # More gradual radial gradient
+    distance = gl.sqrt(x*x + y*y)
+    intensity = 1 - min(distance / 300, 1)
+
+    # Combine effects with smoother transitions
+    r = int(r * intensity + wave)
+    g = int(g * intensity + wave)
+    b = int(b * intensity + wave)
+
+    return gl.clamp_ints(r, g, b)
+
 
 ### [Object()]
 class Object:
@@ -133,7 +151,6 @@ class Object:
         else:
             self.texture = [[]]
             self.sprite = gl.Sprite(self.pos, self.texture, self.render).add(game)
-
 
         self.sprite.object = self
 
@@ -200,6 +217,33 @@ class Text(Object):
             self.attributes['text'] = f'{self.textinput.left}|{self.textinput.right}'
 
         gl.drawText(self.attributes['text'], self.sprite.x*game.res, self.sprite.y*game.res, self.attributes['size'], self.attributes['color'], self.attributes['bold'], self.attributes['italic'])
+
+### [TriggerType()]
+class TriggerType():
+    def __init__(self, type:str, run, color=(140,80,80)):
+        self.type = type
+        self.run = run
+        self.color = color
+
+        class Trigger(Object):
+            def __init__(self, pos, width, height, attributes):
+                super().__init__(type, pos, width, height, attributes, None)
+                self.sprite.trigger = self
+
+            def render(self):
+                if not editor: return
+                gl.drawRect((self.sprite.x*game.res-10, self.sprite.y*game.res-10, 30, 30), color, 10)
+
+        self.Trigger = Trigger
+
+    def create(self, pos, width, height, attributes):
+        return self.Trigger(pos, width, height, attributes)
+
+Move = TriggerType('move', lambda: print('move'))
+
+trigger = Move.create((30,15),50,50,{})
+
+print(objects)
 
 # Spawns a platform so you dont fall into the void instantly
 Platform((30,30), 20)
@@ -563,7 +607,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
             startTime = None
             finishTime = None
-            
+
             objects = []
             for object in newObjects:
                 type,x,y,width,height,attr,texture = object
@@ -608,15 +652,15 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
                 for sprite in objects:
                     if sprite.collidepoint(pos):
-                            if gl.modPressed('ctrl'):
-                                clipboard = [sprite.pos[0]-pos[0], sprite.pos[1]-pos[1], sprite.width,sprite.height,sprite.object.attributes,sprite.texture]
-                                toast('[Editor] Object copied.')
+                        if gl.modPressed('ctrl'):
+                            clipboard = [sprite.pos[0]-pos[0], sprite.pos[1]-pos[1], sprite.width,sprite.height,sprite.object.attributes,sprite.texture]
+                            toast('[Editor] Object copied.')
 
-                            else:
-                                setattr(sprite, 'physics', not getattr(sprite, 'physics', True))
-                                sprite.object.attributes['physics'] = getattr(sprite, 'physics')
-                                toast(f'[Editor] Object physics: {sprite.object.attributes['physics']}')
-                            break
+                        else:
+                            setattr(sprite, 'physics', not getattr(sprite, 'physics', True))
+                            sprite.object.attributes['physics'] = getattr(sprite, 'physics')
+                            toast(f'[Editor] Object physics: {sprite.object.attributes['physics']}')
+                        break
 
         case gl.pygame.K_v:
             if not editor: return
