@@ -1,82 +1,62 @@
 from colorsys import hls_to_rgb
+from numba import njit
+import pygame.gfxdraw
+import functools
 import pygame
+import types
 import math
+import json
+import os
+
+VERSION = 11
 
 dt = 1
 
 game = None
 
-def cache(simple=True, ignored=None, periods=None, max_size=128):
-    if not simple:
-        def decorator(callback):
-            _cache = {}
 
-            def wrapper(*args, **kwargs):
-                # Determine which arguments to ignore
-                ignore_args = set(ignored) if isinstance(ignored, (list, set, tuple)) else set()
-                ignore_kwargs = set(ignored) if isinstance(ignored, dict) else set()
-
-                # Filter out ignored arguments
-                filtered_args = tuple(
-                    arg for i, arg in enumerate(args)
-                    if i not in ignore_args
-                )
-                filtered_kwargs = {
-                    k: v for k, v in kwargs.items()
-                    if k not in ignore_kwargs
-                }
-
-                # Generate key with periods applied
-                if periods:
-                    key = []
-                    for i, arg in enumerate(filtered_args):
-                        if i in periods:
-                            key.append(arg % periods[i])
-                        else:
-                            key.append(arg)
-
-                    for k, v in sorted(filtered_kwargs.items()):
-                        if k in periods:
-                            key.append(v % periods[k])
-                        else:
-                            key.append(v)
-
-                    key = tuple(key)
-                else:
-                    key = filtered_args + tuple(sorted(filtered_kwargs.items()))
-
-                if key not in _cache:
-                    _cache[key] = callback(*args, **kwargs)
-
-                return _cache[key]
-            return wrapper
-
+def cache(ignore=None):
+    if ignore is None:
+        ignore = set()
     else:
-        def decorator(callback):
-            _cache = {}
+        ignore = set(ignore)  # convert to set for O(1) lookups
 
-            def wrapper(*args):
-                # Use faster hash-based lookup for hashable arguments
-                key = hash(args)
+    def decorator(callback):
+        _cache = {}
 
-                if key not in _cache:
-                    _cache[key] = callback(*args)
+        @functools.wraps(callback)
+        def wrapper(*args):
+            # Avoid building tuple if no ignore — fast path
+            if ignore:
+                key = tuple(arg for i, arg in enumerate(args) if i not in ignore)
+            else:
+                key = args  # args is already a tuple, no need to rebuild
 
-                return _cache[key]
-            return wrapper
+            if key not in _cache:
+                _cache[key] = callback(*args)
+
+            return _cache[key]
+
+        return wrapper
     return decorator
 
-sin = math.sin
-cos = math.cos
-sqrt = math.sqrt
 
-def exp(x):
-    return math.exp(x)
+pi        = math.pi
+sin       = math.sin
+cos       = math.cos
+tan       = math.tan
+sqrt      = math.sqrt
+exp       = math.exp
+atan2     = math.atan2
+radians   = math.radians
+log       = math.log
 
+@njit
 def hsl(h,s,l):
     r,g,b = hls_to_rgb(h/360,l/100,s/100)
     return (int(r*255),int(g*255),int(b*255))
 
+@njit
 def distance(p1,p2):
     return sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
 
@@ -84,7 +64,15 @@ def clamp(num, min_=0, max_=255):
     return min(max(num, min_), max_)
 
 def clamp_ints(*args,min=0, max_=255):
-    return [clamp(num,min,max_) for num in args]
+    return [clamp(int(num),min,max_) for num in args]
+
+def sum_ints(*args):
+    result = [0]*len(args[0])
+    for arg in args:
+        for i,num in enumerate(arg):
+            result[i] += num
+
+    return result
 
 fonts = {}
 def getFont(size,bold=False,italic=False):
@@ -128,6 +116,206 @@ def drawText(text: str, x: int, y: int, size=10, color=(255, 255, 255), bold=Fal
 
 def drawRect(rect, color, width=0, border_radius=0):
     pygame.draw.rect(game.disp, color, rect, width, border_radius)
+
+def drawLine(start, end, color, width=1):
+    pygame.draw.line(game.disp, color, start, end, width)
+
+
+### Shader Functions ###
+def load_as_module(source, name, globals={}):
+    module = types.ModuleType(name)
+    module.__dict__.update(globals)
+    exec(source, module.__dict__)
+    return module
+
+def loadShaderMeta(shader_pack):
+    metapath = os.path.join(shader_pack, 'shader.json')
+
+    with open(metapath) as f:
+        meta = json.load(f)
+
+    require = meta['require']
+
+    if game.id in require:
+        ver = require[game.id]
+        try: compatible = ver == '*' or eval(f'{game.VERSION}{ver}')
+        except: compatible = False
+        if not compatible:
+            return 'Error', f'This shader requires platformer version {ver}.'
+
+    if 'engine' in require:
+        ver = require['engine']
+        try: compatible = ver == '*' or eval(f'{VERSION}{ver}')
+        except: compatible = False
+        if not compatible:
+            return 'Error', f'This shader requires engine version {ver}.'
+
+    return meta
+
+def loadShaderFile(shader_pack, shader_file, globals={}):
+    meta = loadShaderMeta(shader_pack)
+    shader_meta = next((s for s in meta['shaders'] if s['filename'] == shader_file), None)
+
+    if shader_meta.get('args'):
+        missing_args = [arg for arg in shader_meta['args'] if arg not in globals]
+        if missing_args:
+            return 'Error', f'Shader {shader_file} missing {len(missing_args)} arguments: {str(missing_args).strip("[]")}'
+
+    with open(os.path.join(shader_pack, shader_file)) as f:
+        try:
+            module = load_as_module(f.read(), f.name, globals)
+            shader_func = module.shader
+
+            if shader_meta.get('cache', False):
+                shader_func = cache(ignore=shader_meta.get('ignore_args', []))(shader_func)
+
+            return shader_func
+
+        except Exception as e:
+            print(f'Error while loading shader {shader_file}: {e}')
+            return
+
+def loadShaders(shader_pack, shader_index=None):
+    meta = loadShaderMeta(shader_pack)
+    shaders = meta['shaders']
+
+    if not shader_index:
+        bg_shaders = []
+        sprite_shaders = []
+
+        for shader in shaders:
+            if shader['type'] not in {'background','sprite'}:
+                return 'Error', f'Unsupported shader type: {shader["type"]}'
+
+            shader_func, cache = loadShaderFile(shader_pack, shader['filename'])
+
+            if shader['type'] == 'background':
+                bg_shaders.append((shader_func, cache))
+
+            elif shader['type'] == 'sprite':
+                sprite_shaders.append((shader_func, cache))
+
+        return meta, bg_shaders, sprite_shaders
+
+    shader = shaders[shader_index]
+
+    if shader['type'] not in {'background','sprite'}:
+        return 'Error', f'Unsupported shader type: {shader["type"]}'
+
+    return loadShaderFile(shader_pack, shader['filename'])
+
+def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=[]):
+    """
+        Applies a shader to a surface.
+
+        Args:
+            surf: The surface to apply the shader to.
+            shader: A function that takes a color and returns a modified color.
+            res: The resolution of the shader application (default is 4).
+            mask: A color to not shade. (wont be visible)
+            view_rect: Optional (x, y, width, height) to limit shader processing to visible area
+    """
+    # Create a new surface with alpha support
+    result_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+
+    # Copy initial surface
+    result_surf.blit(surf, (0, 0))
+
+    # Determine bounds for processing
+    if view_rect:
+        # Only process the visible part of the surface
+        min_x = max(0, view_rect[0])
+        min_y = max(0, view_rect[1])
+        max_x = min(surf.get_width(), view_rect[0] + view_rect[2])
+        max_y = min(surf.get_height(), view_rect[1] + view_rect[3])
+    else:
+        # Process the entire surface if no view rect specified
+        min_x, min_y = 0, 0
+        max_x, max_y = surf.get_width(), surf.get_height()
+
+    # Process only the pixels within bounds
+    for y in range(min_y, max_y, res):
+        for x in range(min_x, max_x, res):
+            try:
+                color = surf.get_at((x, y))
+
+                # Always skip completely transparent pixels
+                if color.a == 0:
+                    continue
+
+                # If using mask and this is a masked color, make it transparent
+                if mask and color.r == mask[0] and color.g == mask[1] and color.b == mask[2]:
+                    result_surf.set_at((x, y), (0, 0, 0, 0))
+                    continue
+
+                # Apply shader and update
+                new_color = shader(color, x, y, game.frame, *args)
+
+                if not new_color:
+                    continue
+                rect = (x, y, res, res)
+                pygame.gfxdraw.box(result_surf, rect, new_color)
+
+            except IndexError:
+                continue  # Handle edge case errors
+
+    return result_surf
+
+def drawRectShaded(rect, shader, res=4, border_radius=0, args=[]):
+    """
+    Draw a shaded rectangle with optional rounded corners.
+    Uses efficient pygame blending for proper masking and better performance.
+
+    Args:
+        rect: The rectangle (x, y, width, height)
+        shader: Shader function to apply
+        res: Resolution of shader application (pixel size)
+        border_radius: Radius for rounded corners
+    """
+    # Create a surface that matches the rectangle's dimensions
+    width, height = rect[2], rect[3]
+
+    # Check if the rect is visible on screen at all
+    screen_width = game.width * game.res
+    screen_height = game.height * game.res
+
+    # Skip if completely out of bounds
+    if (rect[0] + width < 0 or rect[0] >= screen_width or
+        rect[1] + height < 0 or rect[1] >= screen_height):
+        return
+
+    # Create surface for the colored/shaded content
+    shader_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    shader_surface.fill((100, 100, 100, 255))  # Fill with a neutral gray
+
+    # Apply the shader - only to visible portion
+    visible_rect = [
+        max(0, -rect[0]),
+        max(0, -rect[1]),
+        min(width, screen_width - rect[0]) - max(0, -rect[0]),
+        min(height, screen_height - rect[1]) - max(0, -rect[1])
+    ]
+
+    shader_surface = applyShader(shader_surface, shader, res, view_rect=visible_rect, args=args)
+
+    # Create the mask surface for the shape
+    mask_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    mask_surface.fill((0, 0, 0, 0))  # Start transparent
+
+    # Draw the rounded rectangle onto the mask
+    pygame.draw.rect(mask_surface, (255, 255, 255, 255),
+                   (0, 0, width, height), 0, border_radius)
+
+    # Create the final surface
+    result_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    result_surface.fill((0, 0, 0, 0))  # Start transparent
+
+    # Blit the shader surface using the mask as an alpha channel
+    result_surface.blit(shader_surface, (0, 0))
+    result_surface.blit(mask_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+    # Blit the final result to the game display
+    game.disp.blit(result_surface, (rect[0], rect[1]))
 
 @cache()
 def textSize(text,size):
@@ -174,7 +362,6 @@ def modPressed(mod:str):
             return mods & pygame.KMOD_NUM
         case _:
             return False
-
 
 class Vec2:
     __slots__ = ['_x', '_y', 'length']
@@ -371,7 +558,7 @@ eventMap = {
 }
 
 class Game:
-    __slots__ = ['title', 'size', 'width', 'height', 'res', 'max_fps', 'bg', 'sprites', 'toasts', 'spriteShaders', 'backgroundShaders', 'events', 'disp', 'clock', 'running', 'frame']
+    __slots__ = ['id', 'version', 'title', 'size', 'width', 'height', 'res', 'max_fps', 'bg', 'sprites', 'toasts', 'spriteShaders', 'backgroundShaders', 'events', 'disp', 'clock', 'running', 'frame']
 
     def __init__(self, title, size, res=16, max_fps=0, bg=(0,0,0), flags=0):
         global game
@@ -379,8 +566,8 @@ class Game:
 
         self.title = title
         self.size = size
-        self.width = size[0]
-        self.height = size[1]
+        self.width = size[0]//res
+        self.height = size[1]//res
         self.res = res
         self.max_fps = max_fps
         self.bg = bg
@@ -395,16 +582,17 @@ class Game:
         self.clock = pygame.time.Clock()
 
     def _draw(self):  # sourcery skip: low-code-quality
-        # Clear background
+        # Background shader pass
         if self.backgroundShaders:
             shader_surface = pygame.Surface((self.width, self.height))
+
+            col = None
 
             # Shader pass
             for y in range(self.height):
                 for x in range(self.width):
-                    col = self.bg
                     for shader in self.backgroundShaders:
-                        col = shader(col, x, y, self.frame, None)
+                        col = shader(col, x, y, self.frame)
                         if col is None:
                             break
 
@@ -413,16 +601,16 @@ class Game:
 
             # Scale shader surface to screen
             pygame.transform.scale(shader_surface, (self.width * self.res, self.height * self.res), self.disp)
+
         else:
+            # Clear background
             self.disp.fill(self.bg)
 
         # Sprite rendering with culling
         screen_rect = pygame.Rect(0, 0, self.width, self.height)
 
         for sprite in self.sprites:
-            # Sprite culling
-            sprite_rect = pygame.Rect(sprite.x, sprite.y, sprite.width, sprite.height)
-            if not screen_rect.colliderect(sprite_rect):
+            if hasattr(sprite,'hidden') and sprite.hidden:
                 continue
 
             # Custom draw method takes precedence
@@ -430,19 +618,22 @@ class Game:
                 sprite.draw()
                 continue
 
+            # Sprite culling
+            sprite_rect = pygame.Rect(sprite.x, sprite.y, sprite.width, sprite.height)
+            if not screen_rect.colliderect(sprite_rect):
+                continue
+
             # Skip sprites outside screen bounds
-            if (sprite.x >= self.width or sprite.y >= self.height or 
-                sprite.x + sprite.width < 0 or sprite.y + sprite.height < 0):
+            if not screen_rect.colliderect(sprite_rect):
                 continue
 
             # Optimized sprite rendering
-            for y in range(max(0, -int(sprite.y)), min(sprite.height, int(self.height + 1 - sprite.y))):
-                for x in range(max(0, -int(sprite.x)), min(sprite.width, int(self.width + 1 - sprite.x))):
+            for y in range(min(sprite.height, self.height - int(sprite.y))):
+                for x in range(min(sprite.width, self.width - int(sprite.x))):
                     try:
-                        # Swap x and y to match typical texture format
-                        col = sprite.texture[y][x]
+                        col = sprite.texture[x][y]
                     except IndexError:
-                        continue
+                        break
 
                     # Apply shaders
                     for shader in self.spriteShaders:
@@ -451,8 +642,7 @@ class Game:
                             return
 
                     # Draw pixel
-                    pygame.draw.rect(self.disp, col, 
-                        ((sprite.x + x) * self.res, (sprite.y + y) * self.res, self.res, self.res))
+                    pygame.gfxdraw.box(self.disp, ((sprite.x + x) * self.res, (sprite.y + y) * self.res, self.res, self.res), col)
 
         # Toast rendering
         removed = 0
@@ -469,9 +659,7 @@ class Game:
             if toast.animTarget >= 0:
                 toast.animTarget -= min(toast.animTarget, 20)
 
-
-
-    def shader(self,callback):
+    def shader(self,background = False):
         """
         Decorator that adds a shader callback to the rendering pipeline.
 
@@ -482,8 +670,14 @@ class Game:
         Returns:
             The original callback function, enabling decorator chaining.
         """
-        self.spriteShaders.append(callback)
-        return callback
+        def inner(callback):
+            if background:
+                self.backgroundShaders.append(callback)
+            else:
+                self.spriteShaders.append(callback)
+
+            return callback
+        return inner
 
     def on(self,action):
         print(f'Registered Event: {action}')
@@ -497,8 +691,10 @@ class Game:
 
     def run(self, callback=None):
         global dt
+
         self.running = True
         self.frame = 0
+
         while self.running:
             if callback:
                 callback(self.frame)
@@ -527,11 +723,11 @@ class Game:
             for callback in self.events.get("frame",[]):
                 callback(self.frame)
 
-            pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)}')
+            pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.clock.get_rawtime()}')
             pygame.display.update()
 
             self.frame += 1
-            dt = self.clock.tick(self.max_fps)/1000
+            dt = self.clock.tick_busy_loop(self.max_fps)/1000
 
 __all__ = ["hsl", "distance", "clamp", "clamp_rbg", "getFont", "drawText", "textSize", "floodFill", "keyPressed", "modPressed", "cache", "Vec2", "Sprite", "Toast", "eventMap", "Game"]
 

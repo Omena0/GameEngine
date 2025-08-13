@@ -1,17 +1,13 @@
 from tkinter import colorchooser, filedialog
+from collections.abc import Callable
 from levelLoader import Level
 from ast import literal_eval
 import pygame_textinput
-from enum import Enum
 import engine as gl
 import time as t
+import os
 
-class ObjectType:
-    platform = 0
-    text = 1
-    trigger = 2
-
-gl.pygame.init()
+VERSION = 5
 
 def convert_type(s):
     try:
@@ -19,21 +15,26 @@ def convert_type(s):
     except:
         return s
 
+### [Screen()]
+class Screen:
+    LEVEL_SELECT = 0
+    PLAY = 1
+
 ### [Vars/Physics]
-jumpForce = 0.8
-gBendAmount = 4
+jumpForce = 1.2
+gBendAmount = 3
 gAccelerationAmount = 5
-cameraFollowDistance = 4
-universalPrecision = 5
+cameraFollowDistance = 4.5
+universalPrecision = 8
 dashForce = 0.85
-gravity = 0.04
+gravity = 0.035
 acceleration = 20
-max_speed = 1.2
-air_resistance = 0.99
-friction = 0.97
+max_speed = 1.8
+air_resistance = 0.97
+friction = 0.98
 maxJumps = 2
 maxDashes = 1
-parachuteResistance = 0.9
+parachuteResistance = 0.98
 
 ### [Vars/Init]
 jumps = 0
@@ -46,15 +47,16 @@ finishTime = 0
 parachute = False
 
 ### [Vars/Flags]
-flight   = False
-noclip   = False
-editor   = False
-help     = False
-paint    = False
-debug    = False
-typing   = False
-onGround = False
-hide_gui = False
+screen      = Screen.LEVEL_SELECT
+flight      = False
+noclip      = False
+editor      = False
+help        = False
+paint       = False
+debug       = False
+typing      = False
+onGround    = False
+hide_gui    = False
 
 normalHelp = """--- Movement ---
 w - Jump/Up
@@ -71,7 +73,8 @@ n - Noclip
 e - Editor
 h - Help
 p - Paint
-r - Reset"""
+r - Reset
+esc - Level Select"""
 
 editorHelp = """--- Editor ---
 Left Mouse      - Create object (drag)
@@ -94,50 +97,43 @@ delete  - Delete"""
 mode = None
 startPos = None
 editedObj = None
-selectedObj = None
+selectedObj = 0
 clipboard = None
 selectedCol = (0,255,0)
 
 
 ### [Vars/Level]
 objects = []
-meta = {"name": "Unnamed", "description": "No description"}
+triggers = []
+levelMeta = {"name": "Unnamed", "description": "No description"}
 
 # Initialize the game
-game = gl.Game("Platformer", (75,50),res=8,max_fps=60)
+game = gl.Game("Platformer", (800,600), res=8, max_fps=60)
+game.id = 'platformer'
+game.version = VERSION
 
-cx,cy = 0,0
+cx,cy = 0,10
+
+# Load Shaders
+shaders = {
+    "gradient": gl.loadShaderFile('shaders/internal','gradient.py', {
+        "gl": gl,
+        "colors": [(120, 40, 255), (200, 30, 100)],
+        "angle": 90,  # Angle in degrees
+    })
+}
 
 # Add a player sprite
 player_texture = [
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0)]
+    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
+    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
+    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
+    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
+    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
+    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
 ]
 
 player = gl.Sprite((game.width // 2, game.height // 3*2), player_texture).add(game)
-
-#@game.shader
-def shader(color, x, y, frame, sprite):
-    # Smooth, continuous color transition
-    r = gl.sin(x * 0.1 + frame * 0.02) * 127 + 128
-    g = gl.sin(y * 0.1 + frame * 0.03) * 127 + 128
-    b = gl.sin((x + y) * 0.08 + frame * 0.01) * 127 + 128
-
-    # Softer wave distortion
-    wave = gl.sin(gl.sqrt(x*x + y*y) * 0.1 + frame * 0.01) * 10
-
-    # More gradual radial gradient
-    distance = gl.sqrt(x*x + y*y)
-    intensity = 1 - min(distance / 300, 1)
-
-    # Combine effects with smoother transitions
-    r = int(r * intensity + wave)
-    g = int(g * intensity + wave)
-    b = int(b * intensity + wave)
-
-    return gl.clamp_ints(r, g, b)
-
 
 ### [Object()]
 class Object:
@@ -165,13 +161,21 @@ class Object:
         for key,value in attributes.items():
             setattr(self.sprite, key, value)
 
+    def setPos(self, x, y):
+        self.sprite.setPos(x,y)
+        self.pos = x,y
+        self.sprite.x = x
+        self.sprite.y = y
+        self.x = x
+        self.y = y
+
 ### [Platform(Object)]
 class Platform(Object):
-    def __init__(self, pos, width, height=3, attributes=None, shader = None):
+    def __init__(self, pos, width, height=6, attributes=None, shader = None):
         if attributes is None:
             attributes = {"bounciness": 0.5, "physics": True, "friction": friction}
 
-        super().__init__('platform', pos, width, height, attributes, shader)
+        super().__init__(ObjectType.platform, pos, width, height, attributes, shader)
         self.sprite.platform = self
 
     def gen_texture(self):
@@ -192,15 +196,19 @@ class Text(Object):
     def __init__(self, pos, text, size=10, color=(255,255,255), bold=False, italic=False, input=False):
         self.input = input
         self.attributes = {"text": text, "size": size, "color": color, "bold": bold, "italic": italic, "physics": False}
-        super().__init__('text', pos, *gl.textSize(text, size), self.attributes, None)
+        super().__init__(ObjectType.text, pos, *gl.textSize(text, size), self.attributes, None)
         self.sprite.text = self
 
         if self.input:
             self.textinput = pygame_textinput.TextInputManager()
-            @game.on('scroll')
+
             def scroll(event):
                 y = int(event['y'])
+                print(y)
                 self.attributes['size'] += y
+            self.scroll = scroll
+
+            game.on('scroll')(self.scroll)
 
             if 'all' in game.events:
                 game.events['all'].append(self.textinput.update)
@@ -208,15 +216,20 @@ class Text(Object):
                 game.events['all'] = [self.textinput.update]
 
     def render(self):
+        global typing
         size = gl.textSize(self.attributes['text'],self.attributes['size'])
-        size = int(size[0])//game.res, int(size[1])//game.res
+        size = int(size[0])//game.res+2, int(size[1])//game.res+1
         self.width, self.height = size
         self.sprite.width, self.sprite.height = size
+        self.sprite.object.width, self.sprite.object.height = size
 
         if self.input and not typing:
-            self.attributes['text'] = self.textinput.value
+            print(self.textinput.value)
+            self.attributes['text'] = self.textinput.value[:-1]
             game.events['all'].remove(self.textinput.update)
+            game.events['scroll'].remove(self.scroll)
             del self.textinput
+            del self.scroll
             self.input = False
 
         if self.input:
@@ -225,50 +238,138 @@ class Text(Object):
         gl.drawText(self.attributes['text'], self.sprite.x*game.res, self.sprite.y*game.res, self.attributes['size'], self.attributes['color'], self.attributes['bold'], self.attributes['italic'])
 
 ### [TriggerType()]
-class TriggerType():
-    def __init__(self, type:str, run, color=(140,80,80)):
+class TriggerType:
+    def __init__(self, type:str, run:Callable, color=(255,0,0)):
         self.type = type
         self.run = run
         self.color = color
 
+        triggerTypes.append(self)
+
         class Trigger(Object):
-            def __init__(self, pos, width, height, attributes):
-                super().__init__(type, pos, width, height, attributes, None)
+            def __init__(self, pos, width, height, attributes, activation = TriggerActivationType.manual, behavior = TriggerActivationBehavior.once):
+                self.activation = activation
+                self.behavior = behavior
+                self.state = TriggerState.ready
+                attributes['type'] = type
+                attributes['activation'] = activation
+                attributes['behavior'] = behavior
+                super().__init__(type+2, pos, width, height, attributes, None)
                 self.sprite.trigger = self
+                triggers.append(self)
 
             def render(self):
                 if not editor: return
-                gl.drawRect((self.sprite.x*game.res-10, self.sprite.y*game.res-10, 30, 30), color, 10)
+                gl.pygame.draw.rect(game.disp, color, (self.sprite.x*game.res, self.sprite.y*game.res,self.width*game.res,self.height*game.res))
+
+            def run(self):
+                run(self)
+
+            def check_run(self):
+                match self.behavior:
+                    case TriggerActivationBehavior.once:
+                        if self.state == TriggerState.ready:
+                            self.run()
+                            self.behavior = TriggerActivationBehavior.never
+                    case TriggerActivationBehavior.repeat:
+                        if self.state == TriggerState.ready:
+                            self.run()
+                    case TriggerActivationBehavior.continuous:
+                        self.run
+                    case TriggerActivationBehavior.never:
+                        return
+
+            def check(self):
+                match self.activation:
+                    case TriggerActivationType.vertical:
+                        if self.x < player.x-cx+player.width/2 < self.x+self.width:
+                            self.check_run()
+                            self.state = TriggerState.triggered
+                        else:
+                            self.state = TriggerState.ready
+
+                    case TriggerActivationType.horizontal:
+                        if self.y < player.y-cy < self.y+self.height:
+                            self.check_run()
+                            self.state = TriggerState.triggered
+                        else:
+                            self.state = TriggerState.ready
+
+                    case TriggerActivationType.touch:
+                        testRect = gl.pygame.Rect(self.x,self.y,self.width,self.height)
+                        playerRect = gl.pygame.Rect(player.x-cx,player.y-cy,player.width,player.height)
+
+                        if testRect.colliderect(playerRect):
+                            self.check_run()
+                            self.state = TriggerState.triggered
+                        else:
+                            self.state = TriggerState.ready
 
         self.Trigger = Trigger
 
-    def create(self, pos, width, height, attributes):
-        return self.Trigger(pos, width, height, attributes)
+    def create(self, *args, **kwargs):
+        return self.Trigger(*args, **kwargs)
 
-Move = TriggerType('move', lambda: print('move'))
+triggerTypes = []
 
-trigger = Move.create((30,15),50,50,{})
+### [Enums]
+class ObjectType:
+    platform = 0
+    text = 1
+    trigger = 2
 
-print(objects)
+class TriggerActivationType:
+    vertical = 0
+    horizontal = 1
+    touch = 2
+    manual = 3
 
-# Spawns a platform so you dont fall into the void instantly
-Platform((30,30), 20)
+class TriggerActivationBehavior:
+    once = 0
+    repeat = 1
+    continuous = 2
+    never = 3
 
-Text((30,20),'Hello world',30)
+class TriggerState:
+    ready = 0
+    triggered = 1
+
+class TriggerTypes:
+    move = 0
+    spawn = 1
+
+def trigger(type, color):
+    def decorator(func):
+        TriggerType(type, func, color)
+    return decorator
+
+# Define trigger types
+
+@trigger(TriggerTypes.move, (254, 46, 254))
+def moveTrigger(self):
+    for targetId in self.attributes['targets']:
+        target = objects[targetId].object
+        target.setPos(target.x+self.attributes['dx'],target.y+self.attributes['dy'])
+
+@trigger(TriggerTypes.spawn, (0, 255, 255))
+def spawnTrigger(self):
+    for targetId in self.attributes['targets']:
+        target = objects[targetId].trigger
+        target.run()
 
 ### [Utils]
 def respawn():
     global cx,cy,vel,startTime
-    cy = 0
+    cy = 10
     cx = 0
     vel = [0,0]
     startTime = None
-    toast('You died.')
 
 def updateCamera():
     global cx,cy,vel,startTime
-    if cy <= -60:
+    if cy <= -100:
         respawn()
+        toast('You died.')
 
     # Player movement
     player.x = game.width // 2
@@ -288,11 +389,58 @@ def updateCamera():
 def toast(text):
     gl.Toast((game.width*game.res-5,game.height*game.res-5),text,20)
 
+def load_level(path):
+    global levelMeta, objects, triggers, startTime, finishTime
+    for sprite in objects:
+        if sprite == player: continue
+        game.sprites.remove(sprite)
+
+    levelMeta, newObjects = Level(path, VERSION).load_level()
+
+    startTime = None
+    finishTime = None
+
+    objects = []
+    triggers = []
+    for object in newObjects:
+        type,x,y,width,height,attr,*texture = object
+        if texture: texture = texture[0]
+        type,x,y,width,height = int(type),float(x),float(y),int(width),int(height)
+
+        attr = dict([(i.split('=')[0], convert_type(i.split('=')[1].replace('~',','))) for i in attr.split(',')])
+        texture = convert_type(texture)
+
+        match type:
+            case ObjectType.platform:
+                object = Platform((x,y),width,height,attr)
+                object.sprite.setPos(x,y)
+                object.sprite.updateTexture(texture)
+
+            case ObjectType.text:
+                object = Text((x,y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
+
+            case ObjectType.trigger:
+                object = triggerTypes[attr['type']].create((x,y),width,height,attr,attr['activation'],attr['behavior'])
+
 ### [GameLoop/Event]
 @game.on('frame')
 def frame(frame):  # sourcery skip: low-code-quality
-    global cx,cy, pressedX, jumps, dashes, finishTime, startTime, onGround
+    # UI Screens
+    if screen == Screen.LEVEL_SELECT:
+        player.hidden = True
+        draw_level_select()
 
+    elif screen == Screen.PLAY:
+        player.hidden = False
+        physics()
+        if not hide_gui:
+            draw_gui()
+        return
+
+    player.hidden = True
+
+def physics():
+    global cx,cy, pressedX, jumps, dashes, finishTime, startTime, onGround
     ### [GameLoop/Apply velocity]
     vel[0] = vel[0] * (parachuteResistance if parachute else air_resistance)
     vel[1] = vel[1] * (parachuteResistance if parachute else air_resistance)
@@ -303,7 +451,7 @@ def frame(frame):  # sourcery skip: low-code-quality
     ## [GameLoop/Check movement]
     pressedX = 0
     pressedY = 0
-    if not (gl.modPressed('shift') or gl.modPressed('ctrl')):
+    if not (gl.modPressed('shift') or gl.modPressed('ctrl') or typing):
         if gl.keyPressed('w'):
             pressedY += 1
         if gl.keyPressed('a'):
@@ -329,7 +477,7 @@ def frame(frame):  # sourcery skip: low-code-quality
     if collisions and not noclip:
         for sprite in collisions:
             object = sprite.object
-            if object.type != 'platform':
+            if object.type != ObjectType.platform:
                 continue
 
             if not getattr(sprite, 'physics', True):
@@ -358,6 +506,9 @@ def frame(frame):  # sourcery skip: low-code-quality
 
             cy -= 0.015
 
+    for trigger in triggers:
+        trigger.check()
+
     ### [GameLoop/Gravity]
     if not flight and not onGround:
         g = round(gravity * (-pressedY/gBendAmount+1+(-vel[1]/gAccelerationAmount)),3) * (0.5 if parachute else 1)
@@ -376,64 +527,230 @@ def frame(frame):  # sourcery skip: low-code-quality
     ### [GameLoop/Camera]
     updateCamera()
 
+def draw_gui():
     # GUI
-    if not hide_gui:
-        gl.drawText(meta['name'], 5, 5, 20)
-        gl.drawText(meta['description'], 10, 30, 12)
+    gl.drawText(levelMeta['name'], 5, 5, 20)
+    gl.drawText(levelMeta['description'], 10, 30, 12)
 
-        modeText = f'Mode: {'Editor - ' if editor else ""}{mode or "None"}'
-        gl.drawText(modeText, 5, 50, 13)
+    modeText = f'Mode: {'Editor - ' if editor else ""}{mode or "None"}'
+    gl.drawText(modeText, 5, 50, 13)
 
-        if noclip:
-            gl.drawText('Noclip: ON', 5, 70, 13)
+    gl.drawText(f'Noclip: {"ON" if noclip else "OFF"}', 5, 70, 13)
+    gl.drawText(f'Flight: {"ON" if flight else "OFF"}', 5, 90, 13)
+    gl.drawText(f'Paint: {"ON" if paint else "OFF"}', 5, 110, 13)
+
+    if finishTime:
+        gl.drawText(f'Level completed in {round(finishTime,3)} seconds.', 5, 130, 13)
+    else:
+        gl.drawText(f'Timer: {round(t.time()-startTime,3) if startTime else 0}', 5, 130, 13)
+
+    if help:
+        if editor:
+            gl.drawText(editorHelp, 5, 150, 15)
         else:
-            gl.drawText('Noclip: OFF', 5, 70, 13)
+            gl.drawText(normalHelp, 5, 150, 15)
 
-        if flight:
-            gl.drawText('Flight: ON', 5, 90, 13)
-        else:
-            gl.drawText('Flight: OFF', 5, 90, 13)
+    if debug:
+        gl.drawText('--- Debug ---', 5, 150, 14)
+        gl.drawText(f'X: {str(cx):<11} Y: {cy}', 5, 166, 14)
+        gl.drawText(f'VX: {str(vel[0]):<10} VY: {vel[1]}', 5, 180, 14)
+        gl.drawText(f'Jumps: {jumps}', 5, 196, 14)
+        gl.drawText(f'Dashes: {dashes}', 5, 210, 14)
+        gl.drawText(f'OnGround: {onGround}', 5, 226, 14)
+        gl.drawText(f'PressedX: {pressedX}', 5, 244, 14)
+        gl.drawText(f'PressedY: {pressedY}', 5, 260, 14)
 
-        if paint:
-            gl.drawText('Paint: ON', 5, 110, 13)
-        else:
-            gl.drawText('Paint: OFF', 5, 110, 13)
+    if editor:
+        gl.drawRect((453,5,200,98),(50,50,50),0,10)
+        gl.drawText('--- Objects ---', 475, 5, 18)
 
-        if finishTime:
-            gl.drawText(f'Level completed in {round(finishTime,3)} seconds.', 5, 130, 13)
-        else:
-            gl.drawText(f'Timer: {round(t.time()-startTime,3) if startTime else 0}', 5, 130, 13)
+        # Draw the grid
+        for y in range(2):
+            for x in range(4):
+                gl.drawRect((460+x*35,30+y*35,30,30),(100,100,100),0,3)
 
-        if help:
-            if editor:
-                gl.drawText(editorHelp, 5, 150, 15)
-            else:
-                gl.drawText(normalHelp, 5, 150, 15)
+        # Platform
+        gl.drawRect((465,45,20,10),(255,255,255))
 
-        if debug:
-            gl.drawText('--- Debug ---', 5, 150, 14)
-            gl.drawText(f'X: {str(cx):<11} Y: {cy}', 5, 166, 14)
-            gl.drawText(f'VX: {str(vel[0]):<10} VY: {vel[1]}', 5, 180, 14)
-            gl.drawText(f'Jumps: {jumps}', 5, 196, 14)
-            gl.drawText(f'Dashes: {dashes}', 5, 210, 14)
-            gl.drawText(f'OnGround: {onGround}', 5, 226, 14)
-            gl.drawText(f'PressedX: {pressedX}', 5, 244, 14)
-            gl.drawText(f'PressedY: {pressedY}', 5, 260, 14)
+        # Text
+        gl.drawText('T', 501, 27, 30)
+
+        # Triggers
+
+        # Move
+        gl.drawRect((533,33,24,24),triggerTypes[TriggerTypes.move].color,0,3)
+
+        # Spawn
+        gl.drawRect((568,33,24,24),triggerTypes[TriggerTypes.spawn].color,0,3)
+
+def scan_levels():
+    """Scan the levels directory and load all available levels"""
+    global levels
+    levels = []
+
+    # Check if levels directory exists
+    if not os.path.exists('levels'):
+        return
+
+    # Get all .lvl files
+    level_files = [f for f in os.listdir('levels') if f.endswith('.lvl')]
+
+    # Load each level metadata
+    for i, level_file in enumerate(level_files):
+        try:
+            path = os.path.join('levels', level_file)
+            level_loader = Level(path, VERSION)
+            meta, _ = level_loader.load_level()            # Create a LevelItem with adjusted dimensions
+            list_x = game.width - 33  # Position in the right panel
+            level_item = LevelItem(
+                meta['name'],
+                meta['description'],
+                path,
+                list_x,
+                10 + (i * 20),  # Vertical spacing between items
+                30,  # Width that fits in the panel
+                15,  # Height for each item
+                selected=(i == 0)  # Select first level by default
+            )
+            levels.append(level_item)
+
+            # Set the first level as selected
+            if i == 0:
+                global selected_level
+                selected_level = level_item
+
+        except Exception as e:
+            print(f"Error loading level {level_file}: {e}")
+
+def draw_level_select():
+    """Draw the level selection screen"""
+    global levels, selected_level, level_scroll
+
+    # First time init
+    if not levels:
+        scan_levels()
+
+    game.backgroundShaders = [shaders["gradient"]]
+
+    # Draw level list area background
+    list_x = game.width - 33
+    list_width = 32
+    gl.drawRect((list_x*game.res, 5*game.res, list_width*game.res, (game.height-10)*game.res), (40, 40, 50), 0, 5)    # Draw visible levels
+    visible_start = max(0, min(level_scroll, len(levels) - max_visible_levels))
+    visible_end = min(len(levels), visible_start + max_visible_levels)
+
+    for i, level in enumerate(levels[visible_start:visible_end]):
+        level.x = list_x + 1  # Position levels in the list area
+        level.y = 10 + (i * 22)  # Update position based on scroll, with more spacing between items
+        level.width = list_width - 2  # Fit within list area
+        level.height = 15  # Reasonable height for a list item
+        level.draw()
+
+    # Draw scroll indicators if needed
+    if level_scroll > 0:
+        gl.drawText("▲", (game.width - 18)*game.res, 3*game.res, 16)
+
+    if visible_end < len(levels):
+        gl.drawText("▼", (game.width - 18)*game.res, (game.height - 10)*game.res, 16)
+
+    # Draw level details panel if a level is selected
+    if selected_level:
+        # Draw details panel background - make it smaller with spacing
+        gl.drawRect((5,5,200,game.height*game.res-10), (60, 60, 70), 0, 5)
+
+        # Draw level name and description with proper spacing
+        gl.drawText(selected_level.name, 20*game.res, 20*game.res, 20)
+
+        # Wrap description text
+        desc = selected_level.description
+        max_chars = 25  # Adjusted for smaller panel width
+        wrapped_lines = [desc[i:i+max_chars] for i in range(0, len(desc), max_chars)]
+
+        for i, line in enumerate(wrapped_lines):
+            gl.drawText(line, 10*game.res, (25 + i * 5)*game.res, 14)
+
+        # Draw play button
+        play_btn_color = (100, 200, 100)
+        mouse_pos = gl.pygame.mouse.get_pos()
+        
+        btn_x = game.width - 25
+        btn_y = game.height - 15
+        btn_width = 20
+        btn_height = 10
+        
+        play_btn_rect = (btn_x*game.res, btn_y*game.res, btn_width*game.res, btn_height*game.res)
+
+        # Check if mouse is over play button
+        play_btn_hover = (
+            play_btn_rect[0] <= mouse_pos[0] <= play_btn_rect[0] + play_btn_rect[2] and
+            play_btn_rect[1] <= mouse_pos[1] <= play_btn_rect[1] + play_btn_rect[3]
+        )
+
+        if play_btn_hover:
+            play_btn_color = (120, 220, 120)
+
+        gl.drawRect(play_btn_rect, play_btn_color, 0, 5)
+        gl.drawText("PLAY", (btn_x+5)*game.res, (btn_y+3)*game.res, 14)
+
+### [LevelItem(Object)]
+class LevelItem:
+    def __init__(self, name, description, path, x, y, width=30, height=15, selected=False):
+        self.name = name
+        self.description = description
+        self.path = path
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.selected = selected
+        self.hover = False
+
+    def draw(self):
+        # Draw background rectangle with different colors for hover/selected states
+        color = (100, 100, 100) if not self.selected else (150, 150, 200)
+        if self.hover and not self.selected:
+            color = (120, 120, 120)
+
+        gl.drawRect((self.x*game.res, self.y*game.res, self.width*game.res, self.height*game.res), color, 0, 5)
+
+        # Draw level name and truncated description        gl.drawText(self.name, (self.x + 1)*game.res, (self.y + 1)*game.res, 14)
+        desc_truncated = self.description[:20] + "..." if len(self.description) > 20 else self.description
+        gl.drawText(desc_truncated, (self.x + 1)*game.res, (self.y + 6)*game.res, 10)
+        
+    def contains_point(self, pos):
+        # Debug print to help diagnose click issues
+        #print(f"Click at {pos}, button at {self.x},{self.y} with size {self.width}x{self.height}")
+        return (self.x <= pos[0] <= self.x + self.width and
+                self.y <= pos[1] <= self.y + self.height)
+
+### [Vars/Level Select]
+levels = []
+selected_level = None
+level_scroll = 0
+max_visible_levels = 5
+level_details_visible = False
 
 ### [Editor Mouse]
 @game.on('mouseDown')
 def mouseDown(event):  # sourcery skip: low-code-quality
     global startPos, grabPos, editedObj, editor, mode, selectedCol, oldTexture
+    global selectedObj, typing
     if not editor: return
     pos = (event['pos'][0]//game.res-cx, event['pos'][1]//game.res-cy)
     pos = round(pos[0]), round(pos[1])
 
+    # Object selector
+    if event['pos'][0] in range(453,1000) and event['pos'][1] in range(5,93):
+        pos = event['pos']
+        selectedObj = (pos[0]-460)//35 + max(0,(pos[1]-30)//35*4)
+        return
+
     # Left
     if event['button'] == 1:
-        if paint and editor:
+        if paint:
             if not selectedCol: return
             for sprite in objects:
-                if sprite.object.type != 'platform': return
+                if sprite.object.type != ObjectType.platform: return
                 if sprite.collidepoint(pos):
                     startPos = pos[0]-sprite.pos[0], pos[1]-sprite.pos[1]
 
@@ -447,14 +764,42 @@ def mouseDown(event):  # sourcery skip: low-code-quality
                     else:
                         sprite.texture[startPos[0]][startPos[1]] = selectedCol
                     break
-        else:
-            startPos = pos
-            mode = 'add'
-            editedObj = Platform(pos,1,1)
+            return
+
+        if not selectedObj:
+            selectedObj = ObjectType.platform
+
+        match selectedObj:
+            case ObjectType.platform:
+                startPos = pos
+                mode = 'add'
+                editedObj = Platform(pos,1,1)
+                print('added')
+
+            case ObjectType.text:
+                typing = True
+                editedObj = Text(pos,'', 30, input=True)
+
+            case _:
+                startPos = pos
+                mode = 'add'
+                editedObj = triggerTypes[selectedObj-2].create(
+                    pos,
+                    1,
+                    1,
+                    {
+                        'dx': 0,
+                        'dy': 0,
+                        'targets': [],
+                        'physics': False
+                    },
+                    TriggerActivationType.touch,
+                    TriggerActivationBehavior.repeat
+                )
 
     # Middle
     elif event['button'] == 2:
-        for sprite in objects:
+       for sprite in objects:
             if sprite.collidepoint(pos):
                 startPos = sprite.pos[0]+sprite.width-1, sprite.pos[1]+sprite.height-1
                 grabPos = sprite.pos[0]-pos[0], sprite.pos[1]-pos[1]
@@ -467,7 +812,7 @@ def mouseDown(event):  # sourcery skip: low-code-quality
         for sprite in objects:
             if sprite.collidepoint(pos):
                 if paint and editor:
-                    if sprite.object.type != 'platform': return
+                    if sprite.object.type != ObjectType.platform: return
                     startPos = pos[0]-sprite.pos[0], pos[1]-sprite.pos[1]
                     sprite.texture[startPos[0]][startPos[1]] = game.bg
 
@@ -495,30 +840,38 @@ def mouseMove(event):  # sourcery skip: low-code-quality
                 width = startPos[0]-pos[0]
 
             editedObj.width = max(width,1)
+            editedObj.sprite.width = max(width,1)
+            editedObj.sprite.object.width = max(width,1)
 
             if height < 1:
                 editedObj.setPos(editedObj.x, pos[1])
                 height = startPos[1]-pos[1]
 
             editedObj.height = max(height,1)
+            editedObj.sprite.height = max(height,1)
+            editedObj.sprite.object.height = max(height,1)
 
-            editedObj.sprite.updateTexture(editedObj.gen_texture())
+            if editedObj.texture[0]:
+                editedObj.sprite.updateTexture(editedObj.gen_texture())
 
         elif mode == 'edit':
-            if editedObj.object.type == 'platform':
+            if editedObj.object.type == ObjectType.text:
+                pos = gl.pygame.mouse.get_pos()
+                size = pos[1] - editedObj.y*game.res
+                editedObj.text.attributes['size'] = max(int(size),1)
+
+            else:
                 pos = int(pos[0]+grabPos[0]), int(pos[1]+grabPos[1])
                 editedObj.setPos(*pos)
                 width = startPos[0]-pos[0]
                 height = startPos[1]-pos[1]
                 editedObj.object.width = max(width,1)
                 editedObj.object.height = max(height,1)
+                editedObj.object.sprite.width = max(width,1)
+                editedObj.object.sprite.height = max(height,1)
 
-                editedObj.updateTexture(editedObj.object.gen_texture())
-
-            elif editedObj.object.type == 'text':
-                pos = gl.pygame.mouse.get_pos()
-                size = pos[1] - editedObj.y*game.res
-                editedObj.text.attributes['size'] = max(int(size),1)
+                if editedObj.texture[0]:
+                    editedObj.updateTexture(editedObj.object.gen_texture())
 
         elif mode == 'move':
             pos = int(pos[0]+grabPos[0]), int(pos[1]+grabPos[1])
@@ -536,11 +889,13 @@ def mouseUp(event):
 @game.on('keyDown')
 def keyDown(key):  # sourcery skip: low-code-quality
     global cx, cy, pressedX, pressedY, jumps, dashes, flight, noclip
-    global meta, objects, clipboard, help, paint, selectedCol, hide_gui
-    global finishTime, parachute, vel, debug, editor, startTime, typing
+    global levelMeta, objects, clipboard, help, paint, selectedCol, hide_gui
+    global finishTime, parachute, vel, debug, editor, startTime, typing, screen
+    global triggers
     key = key['key']
+
     if typing:
-        if key == gl.pygame.K_RETURN:
+        if key == 27:
             typing = False
         return
 
@@ -548,6 +903,12 @@ def keyDown(key):  # sourcery skip: low-code-quality
         startTime = t.time()
 
     match key:
+        case gl.pygame.K_ESCAPE:
+            if screen == Screen.PLAY:
+                screen = Screen.LEVEL_SELECT
+                toast('Returned to level select')
+                return
+
         case gl.pygame.K_w:
             if flight:
                 cy += 1
@@ -566,7 +927,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
 
         case gl.pygame.K_s:
             if editor and gl.modPressed('ctrl'):
-                Level('levels/level.lvl').save_level(meta, objects)
+                Level('levels/level.lvl').save_level(levelMeta, objects)
                 toast('Saved.')
 
         case gl.pygame.K_SPACE:
@@ -604,37 +965,11 @@ def keyDown(key):  # sourcery skip: low-code-quality
         case gl.pygame.K_l:
             if not gl.modPressed('ctrl'): return
 
-            for sprite in objects:
-                if sprite == player: continue
-                game.sprites.remove(sprite)
+            lvl_path = filedialog.askopenfilename(filetypes=['Level .lvl'],initialdir='levels')
+            if not lvl_path:
+                return
 
-            file_name = filedialog.askopenfilename(filetypes=['Level .lvl'],initialdir='levels')
-            meta, newObjects = Level(file_name).load_level()
-
-            startTime = None
-            finishTime = None
-
-            objects = []
-            for object in newObjects:
-                type,x,y,width,height,attr,texture = object
-                x,y,width,height = float(x),float(y),int(width),int(height)
-
-                attr = dict([(i.split('=')[0], convert_type(i.split('=')[1].replace('~',','))) for i in attr.split(',')])
-                texture = convert_type(texture)
-
-                match type:
-                    case ObjectType.platform:
-                        object = Platform((x,y),width,height,attr)
-                        object.sprite.setPos(x,y)
-                        object.sprite.updateTexture(texture)
-
-                    case ObjectType.text:
-                        object = Text((x,y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
-
-                    case ObjectType.trigger:
-                        ...
-
-                print(x, y, width, height, attr)
+            load_level()
 
             toast('Level loaded.')
 
@@ -712,23 +1047,36 @@ def keyDown(key):  # sourcery skip: low-code-quality
             paint = False
             toast('State Reset.')
 
-        case gl.pygame.K_t:
-            if not editor: return
-            
-            mouse_pos = gl.pygame.mouse.get_pos()
-            pos = (mouse_pos[0]//game.res-cx,mouse_pos[1]//game.res-cy)
-            pos = round(pos[0]), round(pos[1])
-
-            typing = True
-
-            Text(pos,'', input=True)
-
         case gl.pygame.K_F1:
             hide_gui = not hide_gui
             if hide_gui:
                 toast('GUI hidden.')
             else:
                 toast('GUI shown.')
+
+        case gl.pygame.K_t:
+            shader_path = filedialog.askdirectory(initialdir='shaders',mustexist=True,title='Select shader')
+
+            if not shader_path: return
+
+            meta, bg_shaders, sprite_shaders = gl.loadShaders(shader_path)
+
+            for bg_shader, cache in bg_shaders:
+                if isinstance(bg_shader, tuple):
+                    print(f'{bg_shader[0]}: {bg_shader[1]}')
+                    return
+
+                if cache:
+                    bg_shader = gl.cache()(bg_shader)
+                game.backgroundShaders.append(bg_shader)
+
+            for sprite_shader, cache in sprite_shaders:
+                if isinstance(sprite_shader, tuple):
+                    print(f'{sprite_shader[0]}: {sprite_shader[1]}')
+                    return
+                if cache:
+                    sprite_shader = gl.cache()(sprite_shader)
+                game.spriteShaders.append(sprite_shader)
 
     updateCamera()
 
@@ -743,4 +1091,138 @@ def keyUp(key):
 
 # Run the game
 game.run()
+
+@game.on('mouseDown')
+def levelSelectMouseDown(event):
+    global selected_level, screen, levels, levelMeta, objects, triggers, level_scroll
+    
+    if screen != Screen.LEVEL_SELECT or editor:
+        return
+        
+    pos = (event['pos'][0] // game.res, event['pos'][1] // game.res)
+    
+    # Debug print
+    print(f"Mouse click at {pos} (scaled from {event['pos']})")
+    
+    # Check if click is in level list area
+    divider_x = game.width - 35
+    if pos[0] > divider_x:
+        # Handle level selection
+        visible_start = max(0, min(level_scroll, len(levels) - max_visible_levels))
+        visible_end = min(len(levels), visible_start + max_visible_levels)
+        
+        for i, level in enumerate(levels[visible_start:visible_end]):
+            print(f"Level {i}: pos={level.x},{level.y} size={level.width}x{level.height}")
+            if level.contains_point(pos):
+                print(f"Selected level: {level.name}")
+                # Deselect previous level
+                if selected_level:
+                    selected_level.selected = False
+                    
+                # Select new level
+                level.selected = True
+                selected_level = level
+                return
+    
+    # Check if click is on play button
+    btn_x = game.width - 25
+    btn_y = game.height - 15
+    btn_width = 20
+    btn_height = 10
+    
+    if (btn_x <= pos[0] <= btn_x + btn_width and
+        btn_y <= pos[1] <= btn_y + btn_height and
+        selected_level):
+
+        # Load selected level
+        try:
+            level_loader = Level(selected_level.path)
+            levelMeta, newObjects = level_loader.load_level()
+
+            # Reset game state
+            for sprite in objects:
+                if sprite == player:
+                    continue
+                game.sprites.remove(sprite)
+
+            objects = []
+            triggers = []
+
+            # Reset variables
+            global jumps, dashes, vel, pressedX, pressedY, startTime, finishTime, parachute
+            jumps = 0
+            dashes = 0
+            vel = [0, 0]
+            pressedX = 0
+            pressedY = 0
+            startTime = 0
+            finishTime = 0
+            parachute = False
+
+            # Load level objects
+            for object in newObjects:
+                type, x, y, width, height, attr, *texture = object
+                if texture:
+                    texture = texture[0]
+                type, x, y, width, height = int(type), float(x), float(y), int(width), int(height)
+
+                attr = dict([(i.split('=')[0], convert_type(i.split('=')[1].replace('~', ','))) for i in attr.split(',')])
+                texture = convert_type(texture)
+
+                match type:
+                    case ObjectType.platform:
+                        object = Platform((x, y), width, height, attr)
+                        object.sprite.setPos(x, y)
+                        object.sprite.updateTexture(texture)
+
+                    case ObjectType.text:
+                        object = Text((x, y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
+
+                    case ObjectType.trigger:
+                        object = triggerTypes[attr['type']].create(
+                            (x, y), width, height, attr, attr['activation'], attr['behavior']
+                        )
+              # Change screen to play mode
+            screen = Screen.PLAY
+            respawn()
+
+        except Exception as e:
+            toast(f"Error loading level: {e}")
+
+@game.on('mouseMove')
+def levelSelectMouseMove(event):
+    global levels, level_scroll
+    
+    if screen != Screen.LEVEL_SELECT or editor:
+        return
+        
+    pos = (event['pos'][0] // game.res, event['pos'][1] // game.res)
+    
+    # Update hover state for levels
+    visible_start = max(0, min(level_scroll, len(levels) - max_visible_levels))
+    visible_end = min(len(levels), visible_start + max_visible_levels)
+    
+    for level in levels[visible_start:visible_end]:
+        level.hover = level.contains_point(pos)
+
+@game.on('scroll')
+def levelSelectScroll(event):
+    global level_scroll, levels
+    
+    if screen != Screen.LEVEL_SELECT or editor:
+        return
+        
+    # Check if mouse is over the level list
+    pos = (event['pos'][0] // game.res, event['pos'][1] // game.res)
+    divider_x = game.width - 35
+    if pos[0] < divider_x:
+        return
+        
+    # Scroll up/down
+    scroll_direction = -1 if event['y'] > 0 else 1
+    level_scroll += scroll_direction
+    
+    # Clamp scroll value
+    max_scroll = max(0, len(levels) - max_visible_levels)
+    level_scroll = max(0, min(level_scroll, max_scroll))
 

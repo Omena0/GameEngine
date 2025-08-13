@@ -7,4 +7,4 @@ You can use shaders to add effects to your games.
 
 ## Platformer
 
-An actual game with a level editor.
+An actual game with a level editor, level loader and shader loader

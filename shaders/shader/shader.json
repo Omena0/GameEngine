@@ -1,0 +1,19 @@
+{
+    "name": "Test shader",
+    "description": "Test shader frfr",
+    "version": 1,
+    "require": {
+        "platformer": "*",
+        "engine": ">=11"
+    },
+    "shaders": [
+        {
+            "type": "sprite",
+            "filename": "sprite.py"
+        },
+        {
+            "type": "background",
+            "filename": "background.py"
+        }
+    ]
+}

@@ -1,7 +1,6 @@
 import os
 
-FORMAT_NUM = 1
-VERSION = 3
+FORMAT_NUM = 2
 
 class Level:
     """Level object
@@ -17,8 +16,9 @@ class Level:
         ...
         6: magic: "EOF"
     """
-    def __init__(self,filePath:str):
+    def __init__(self,filePath:str, game_ver:int):
         self.filePath = filePath
+        self.game_ver = game_ver
         if os.path.exists(filePath):
             with open(filePath) as f:
                 self.src = f.read().splitlines()
@@ -73,7 +73,7 @@ class Level:
             # Write magic strings
             file.write("lvlLdr\n")
             file.write("SECTOR:META\n")
-            file.write(f"{len(objects)}:{FORMAT_NUM}:{VERSION}\n")
+            file.write(f"{len(objects)}:{FORMAT_NUM}:{self.game_ver}\n")
             file.write(f"{meta['name']}:{meta['description']}\n")
             file.write("SECTOR:DATA\n")
 
@@ -83,16 +83,17 @@ class Level:
                 attr = ''.join(f'{key}={str(value).replace(',','~')},' for key, value in object.attributes.items()).removesuffix(',').replace(', ',',').replace('~ ','~')
 
                 file.write(f'{object.type}:')
-                file.write(f'{sprite.x}:')
-                file.write(f'{sprite.y}:')
+                file.write(f'{int(sprite.x)}:')
+                file.write(f'{int(sprite.y)}:')
                 file.write(f'{int(object.width)}:')
                 file.write(f'{int(object.height)}:')
-                file.write(f'{attr}:')
-                file.write(f'{object.sprite.texture}'.replace(', ',','))
+                file.write(f'{attr}')
+                if object.sprite.texture[0]:
+                    file.write(f':{object.sprite.texture}'.replace(', ',','))
                 file.write('\n')
 
             # Write EOF
-            file.write("EOF\n")
+            file.write("EOF")
 
 
 
