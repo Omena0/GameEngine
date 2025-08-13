@@ -388,6 +388,7 @@ class Vec2:
         self._y = value
         self.length = distance((0,0),(value,self.y))
 
+    @njit()
     def normalize(self):
         if self.length == 0:
             return Vec2(0,0)
@@ -428,6 +429,7 @@ class Vec2:
     def __round__(self, ndigits=None):
         return Vec2(round(self.x), round(self.y),ndigits)
 
+    @njit()
     def clamp(self,minValue,maxValue):
         return Vec2(max(minValue, min(self.x, maxValue)), max(minValue, min(self.y, maxValue)))
 
