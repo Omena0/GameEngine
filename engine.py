@@ -1,4 +1,5 @@
 from colorsys import hls_to_rgb
+from numba import njit
 import pygame
 import math
 
@@ -73,16 +74,20 @@ sqrt = math.sqrt
 def exp(x):
     return math.exp(x)
 
+@njit()
 def hsl(h,s,l):
     r,g,b = hls_to_rgb(h/360,l/100,s/100)
     return (int(r*255),int(g*255),int(b*255))
 
+@njit()
 def distance(p1,p2):
     return sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
 
+@njit()
 def clamp(num, min_=0, max_=255):
     return min(max(num, min_), max_)
 
+@njit()
 def clamp_ints(*args,min=0, max_=255):
     return [clamp(num,min,max_) for num in args]
 
@@ -201,6 +206,7 @@ class Vec2:
         self._y = value
         self.length = distance((0,0),(value,self.y))
 
+    @njit()
     def normalize(self):
         if self.length == 0:
             return Vec2(0,0)
@@ -241,6 +247,7 @@ class Vec2:
     def __round__(self, ndigits=None):
         return Vec2(round(self.x), round(self.y),ndigits)
 
+    @njit()
     def clamp(self,minValue,maxValue):
         return Vec2(max(minValue, min(self.x, maxValue)), max(minValue, min(self.y, maxValue)))
 
