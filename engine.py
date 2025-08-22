@@ -47,7 +47,6 @@ atan2     = math.atan2
 radians   = math.radians
 log       = math.log
 
-@njit
 def hsl(h,s,l) -> tuple[int, int, int]:
     r,g,b = hls_to_rgb(h/360,l/100,s/100)
     return (int(r*255),int(g*255),int(b*255))
@@ -72,10 +71,11 @@ def sum_ints(*args) -> list[int]:
 
 fonts = {}
 def getFont(size,bold=False,italic=False) -> Any | pygame.font.Font:
+    size *= 1.5
     if (size,bold,italic) in fonts:
         return fonts[size,bold,italic]
 
-    font = pygame.font.SysFont('FreeSans',size)
+    font = pygame.font.SysFont(None, int(size))
     fonts[size,bold,italic] = font
     return font
 
@@ -345,16 +345,27 @@ def textSize(text,size) -> tuple[int | Any, Any]:
     return largestX, size*i
 
 def floodfill(texture, pos, newColor, oldColor):
-    if texture[pos[0]][pos[1]] != oldColor: return
-    texture[pos[0]][pos[1]] = newColor
+    rows = len(texture)
+    cols = len(texture[0]) if rows > 0 else 0
+    stack = [pos]
 
-    if pos[0] > 0: floodfill(texture, (pos[0]-1, pos[1]), newColor, oldColor)
-    if pos[0] < len(texture)-1: floodfill(texture, (pos[0]+1, pos[1]), newColor, oldColor)
-    if pos[1] > 0: floodfill(texture, (pos[0], pos[1]-1), newColor, oldColor)
-    if pos[1] < len(texture[0])-1: floodfill(texture, (pos[0], pos[1]+1), newColor, oldColor)
+    while stack:
+        x, y = stack.pop()
+        if texture[x][y] != oldColor or texture[x][y] == newColor:
+            continue
+        texture[x][y] = newColor
+
+        if x > 0:
+            stack.append((x-1, y))
+        if x < rows-1:
+            stack.append((x+1, y))
+        if y > 0:
+            stack.append((x, y-1))
+        if y < cols-1:
+            stack.append((x, y+1))
 
 def keyPressed(key:str):# -> Any:
-    return pygame.key.get_pressed()[eval(f'pygame.K_{key}')]
+    return pygame.key.get_pressed()[getattr(pygame, f'K_{key}')]
 
 def modPressed(mod:str) -> int | Literal[False]:
     mods = pygame.key.get_mods()
@@ -397,7 +408,7 @@ class Vec2:
     @y.setter
     def y(self, value):
         self._y = value
-        self.length = distance((0,0),(value,self.y))
+        self.length = distance((0,0),(self.x, value))
 
     def normalize(self):
         if self.length == 0:
@@ -418,6 +429,9 @@ class Vec2:
 
     def __mul__(self, scalar):
         return Vec2(self.x*scalar,self.y*scalar)
+
+    def __rmul__(self, scalar):
+        return self.__mul__(scalar)
 
     def __truediv__(self, scalar):
         return Vec2(self.x/scalar,self.y/scalar)
@@ -522,11 +536,11 @@ class Sprite:
         ) else None
 
     def collidepoint(self, point):
-        self.pos = round(self.pos[0]), round(self.pos[1])
+        pos = round(self.pos[0]), round(self.pos[1])
 
         return (
-            point[0] in range(self.pos[0], self.pos[0]+self.width-1)
-            and point[1] in range(self.pos[1], self.pos[1]+self.height-1)
+            point[0] in range(pos[0], pos[0]+self.width-1)
+            and point[1] in range(pos[1], pos[1]+self.height-1)
         )
 
     def raycast(self, angle, distance=500):
@@ -536,8 +550,8 @@ class Sprite:
         Returns the distance to the first collision, or None if no collision is found
         """
         angle = math.radians(angle)
-        dx = round(math.cos(angle))
-        dy = round(math.sin(angle))
+        dx = round(math.cos(angle))/2
+        dy = round(math.sin(angle))/2
         x = self.x+self.width/2
         y = self.y+self.height/2
 
@@ -647,11 +661,16 @@ class Game:
                     except IndexError:
                         break
 
+                    skip = False
                     # Apply shaders
                     for shader in self.spriteShaders:
                         col = shader(col, int(sprite.x + x), int(sprite.y + y), self.frame, sprite)
                         if not col:
-                            return
+                            skip = True
+                            break
+
+                    if skip:
+                        break
 
                     # Draw pixel
                     pygame.gfxdraw.box(self.disp, ((sprite.x + x) * self.res, (sprite.y + y) * self.res, self.res, self.res), col)
@@ -692,12 +711,12 @@ class Game:
         return inner
 
     def on(self,action):
-        print(f'Registered Event: {action}')
         def inner(callback):
-            if action[0] not in self.events:
+            print(f'Registered Event: {action}')
+            if action not in self.events:
                 self.events[action] = []
 
-            self.events[action].append((callback))
+            self.events[action].append(callback)
 
         return inner
 
@@ -724,6 +743,7 @@ class Game:
             for event in events:
                 for action,callbacks in self.events.copy().items():
                     if (event.type != eventMap.get(action) and eventMap.get(action) != "*"): continue
+
                     for callback in callbacks:
                         callback(event.dict)
 

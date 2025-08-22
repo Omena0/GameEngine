@@ -12,7 +12,7 @@ VERSION = 5
 def convert_type(s):
     try:
         return literal_eval(s)
-    except:
+    except Exception:
         return s
 
 ### [Screen()]
@@ -275,7 +275,7 @@ class TriggerType:
                         if self.state == TriggerState.ready:
                             self.run()
                     case TriggerActivationBehavior.continuous:
-                        self.run
+                        self.run()
                     case TriggerActivationBehavior.never:
                         return
 
@@ -348,6 +348,9 @@ def trigger(type, color):
 @trigger(TriggerTypes.move, (254, 46, 254))
 def moveTrigger(self):
     for targetId in self.attributes['targets']:
+        if targetId is None:
+            self.attributes['targets'].remove(targetId)
+
         target = objects[targetId].object
         target.setPos(target.x+self.attributes['dx'],target.y+self.attributes['dy'])
 
@@ -400,8 +403,8 @@ def load_level(path):
     startTime = None
     finishTime = None
 
-    objects = []
-    triggers = []
+    objects.clear()
+    triggers.clear()
     for object in newObjects:
         type,x,y,width,height,attr,*texture = object
         if texture: texture = texture[0]
@@ -439,7 +442,7 @@ def frame(frame):  # sourcery skip: low-code-quality
 
     player.hidden = True
 
-def physics():
+def physics():  # sourcery skip: low-code-quality
     global cx,cy, pressedX, jumps, dashes, finishTime, startTime, onGround
     ### [GameLoop/Apply velocity]
     vel[0] = vel[0] * (parachuteResistance if parachute else air_resistance)
@@ -623,6 +626,7 @@ def scan_levels():
             print(f"Error loading level {level_file}: {e}")
 
 def draw_level_select():
+    # sourcery skip: assign-if-exp, introduce-default-else, move-assign-in-block
     """Draw the level selection screen"""
     global levels, selected_level, level_scroll
 
@@ -641,9 +645,9 @@ def draw_level_select():
 
     for i, level in enumerate(levels[visible_start:visible_end]):
         level.x = list_x + 1  # Position levels in the list area
-        level.y = 10 + (i * 22)  # Update position based on scroll, with more spacing between items
+        level.y = 6 + (i * 6)  # Update position based on scroll, with more spacing between items
         level.width = list_width - 2  # Fit within list area
-        level.height = 15  # Reasonable height for a list item
+        level.height = 5  # Reasonable height for a list item
         level.draw()
 
     # Draw scroll indicators if needed
@@ -659,7 +663,7 @@ def draw_level_select():
         gl.drawRect((5,5,200,game.height*game.res-10), (60, 60, 70), 0, 5)
 
         # Draw level name and description with proper spacing
-        gl.drawText(selected_level.name, 20*game.res, 20*game.res, 20)
+        gl.drawText(selected_level.name, 50, 20, 20)
 
         # Wrap description text
         desc = selected_level.description
@@ -667,18 +671,18 @@ def draw_level_select():
         wrapped_lines = [desc[i:i+max_chars] for i in range(0, len(desc), max_chars)]
 
         for i, line in enumerate(wrapped_lines):
-            gl.drawText(line, 10*game.res, (25 + i * 5)*game.res, 14)
+            gl.drawText(line, 10, (50 + i * 5), 14)
 
         # Draw play button
         play_btn_color = (100, 200, 100)
         mouse_pos = gl.pygame.mouse.get_pos()
-        
-        btn_x = game.width - 25
-        btn_y = game.height - 15
-        btn_width = 20
-        btn_height = 10
-        
-        play_btn_rect = (btn_x*game.res, btn_y*game.res, btn_width*game.res, btn_height*game.res)
+
+        btn_width = 230
+        btn_height = 50
+        btn_x = game.width*game.res - btn_width - 20
+        btn_y = game.height*game.res - btn_height - 55
+
+        play_btn_rect = (btn_x, btn_y, btn_width, btn_height)
 
         # Check if mouse is over play button
         play_btn_hover = (
@@ -690,7 +694,7 @@ def draw_level_select():
             play_btn_color = (120, 220, 120)
 
         gl.drawRect(play_btn_rect, play_btn_color, 0, 5)
-        gl.drawText("PLAY", (btn_x+5)*game.res, (btn_y+3)*game.res, 14)
+        gl.drawText("PLAY", (btn_x+btn_width//2-35), (btn_y+btn_height//2-15), 30)
 
 ### [LevelItem(Object)]
 class LevelItem:
@@ -713,10 +717,15 @@ class LevelItem:
 
         gl.drawRect((self.x*game.res, self.y*game.res, self.width*game.res, self.height*game.res), color, 0, 5)
 
-        # Draw level name and truncated description        gl.drawText(self.name, (self.x + 1)*game.res, (self.y + 1)*game.res, 14)
-        desc_truncated = self.description[:20] + "..." if len(self.description) > 20 else self.description
-        gl.drawText(desc_truncated, (self.x + 1)*game.res, (self.y + 6)*game.res, 10)
-        
+        # Draw level name and truncated description
+        gl.drawText(self.name, (self.x + 1)*game.res, (self.y + 1)*game.res, 14)
+        desc_truncated = (
+            f"{self.description[:20].replace('\n',' ')}..."
+            if len(self.description) > 20
+            else self.description
+        )
+        gl.drawText(desc_truncated, (self.x + 1)*game.res, (self.y + 3)*game.res, 10)
+
     def contains_point(self, pos):
         # Debug print to help diagnose click issues
         #print(f"Click at {pos}, button at {self.x},{self.y} with size {self.width}x{self.height}")
@@ -727,7 +736,7 @@ class LevelItem:
 levels = []
 selected_level = None
 level_scroll = 0
-max_visible_levels = 5
+max_visible_levels = 9
 level_details_visible = False
 
 ### [Editor Mouse]
@@ -906,6 +915,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
         case gl.pygame.K_ESCAPE:
             if screen == Screen.PLAY:
                 screen = Screen.LEVEL_SELECT
+                objects.clear()
                 toast('Returned to level select')
                 return
 
@@ -1089,28 +1099,23 @@ def keyUp(key):
     if key == gl.pygame.K_c and parachute:
         parachute = False
 
-# Run the game
-game.run()
-
+### [Level Select Events]
 @game.on('mouseDown')
 def levelSelectMouseDown(event):
     global selected_level, screen, levels, levelMeta, objects, triggers, level_scroll
-    
+
     if screen != Screen.LEVEL_SELECT or editor:
         return
-        
+
     pos = (event['pos'][0] // game.res, event['pos'][1] // game.res)
-    
-    # Debug print
-    print(f"Mouse click at {pos} (scaled from {event['pos']})")
-    
+
     # Check if click is in level list area
     divider_x = game.width - 35
     if pos[0] > divider_x:
         # Handle level selection
         visible_start = max(0, min(level_scroll, len(levels) - max_visible_levels))
         visible_end = min(len(levels), visible_start + max_visible_levels)
-        
+
         for i, level in enumerate(levels[visible_start:visible_end]):
             print(f"Level {i}: pos={level.x},{level.y} size={level.width}x{level.height}")
             if level.contains_point(pos):
@@ -1118,111 +1123,66 @@ def levelSelectMouseDown(event):
                 # Deselect previous level
                 if selected_level:
                     selected_level.selected = False
-                    
+
                 # Select new level
                 level.selected = True
                 selected_level = level
                 return
-    
+
     # Check if click is on play button
     btn_x = game.width - 25
     btn_y = game.height - 15
     btn_width = 20
     btn_height = 10
-    
-    if (btn_x <= pos[0] <= btn_x + btn_width and
+
+    if not (btn_x <= pos[0] <= btn_x + btn_width and
         btn_y <= pos[1] <= btn_y + btn_height and
         selected_level):
+        return
 
-        # Load selected level
-        try:
-            level_loader = Level(selected_level.path)
-            levelMeta, newObjects = level_loader.load_level()
+    # Load selected level
+    load_level(selected_level.path)
 
-            # Reset game state
-            for sprite in objects:
-                if sprite == player:
-                    continue
-                game.sprites.remove(sprite)
-
-            objects = []
-            triggers = []
-
-            # Reset variables
-            global jumps, dashes, vel, pressedX, pressedY, startTime, finishTime, parachute
-            jumps = 0
-            dashes = 0
-            vel = [0, 0]
-            pressedX = 0
-            pressedY = 0
-            startTime = 0
-            finishTime = 0
-            parachute = False
-
-            # Load level objects
-            for object in newObjects:
-                type, x, y, width, height, attr, *texture = object
-                if texture:
-                    texture = texture[0]
-                type, x, y, width, height = int(type), float(x), float(y), int(width), int(height)
-
-                attr = dict([(i.split('=')[0], convert_type(i.split('=')[1].replace('~', ','))) for i in attr.split(',')])
-                texture = convert_type(texture)
-
-                match type:
-                    case ObjectType.platform:
-                        object = Platform((x, y), width, height, attr)
-                        object.sprite.setPos(x, y)
-                        object.sprite.updateTexture(texture)
-
-                    case ObjectType.text:
-                        object = Text((x, y), attr['text'], attr['size'], attr['color'], attr['bold'], attr['italic'])
-
-                    case ObjectType.trigger:
-                        object = triggerTypes[attr['type']].create(
-                            (x, y), width, height, attr, attr['activation'], attr['behavior']
-                        )
-              # Change screen to play mode
-            screen = Screen.PLAY
-            respawn()
-
-        except Exception as e:
-            toast(f"Error loading level: {e}")
+    screen = Screen.PLAY
 
 @game.on('mouseMove')
 def levelSelectMouseMove(event):
     global levels, level_scroll
-    
+
     if screen != Screen.LEVEL_SELECT or editor:
         return
-        
+
     pos = (event['pos'][0] // game.res, event['pos'][1] // game.res)
-    
+
     # Update hover state for levels
     visible_start = max(0, min(level_scroll, len(levels) - max_visible_levels))
     visible_end = min(len(levels), visible_start + max_visible_levels)
-    
+
     for level in levels[visible_start:visible_end]:
         level.hover = level.contains_point(pos)
 
 @game.on('scroll')
 def levelSelectScroll(event):
     global level_scroll, levels
-    
+
     if screen != Screen.LEVEL_SELECT or editor:
         return
-        
+
     # Check if mouse is over the level list
-    pos = (event['pos'][0] // game.res, event['pos'][1] // game.res)
+    mouse_pos = gl.pygame.mouse.get_pos()
+    pos = (mouse_pos[0] // game.res, mouse_pos[1] // game.res)
     divider_x = game.width - 35
+
     if pos[0] < divider_x:
         return
-        
+
     # Scroll up/down
     scroll_direction = -1 if event['y'] > 0 else 1
     level_scroll += scroll_direction
-    
+
     # Clamp scroll value
     max_scroll = max(0, len(levels) - max_visible_levels)
     level_scroll = max(0, min(level_scroll, max_scroll))
 
+# Run the game
+game.run()

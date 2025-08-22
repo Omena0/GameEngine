@@ -1,0 +1,4 @@
+rule_settings:
+  disable:
+  - low-code-quality
+  - function-quality
