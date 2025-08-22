@@ -707,7 +707,7 @@ class LevelItem:
 
     def draw(self):
         # Draw background rectangle with different colors for hover/selected states
-        color = (100, 100, 100) if not self.selected else (150, 150, 200)
+        color = (150, 150, 200) if self.selected else (100, 100, 100)
         if self.hover and not self.selected:
             color = (120, 120, 120)
 

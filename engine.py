@@ -1,3 +1,4 @@
+from typing import Callable, Any, Literal
 from colorsys import hls_to_rgb
 from numba import njit
 import pygame.gfxdraw
@@ -14,13 +15,8 @@ dt = 1
 
 game = None
 
-
-def cache(ignore=None):
-    if ignore is None:
-        ignore = set()
-    else:
-        ignore = set(ignore)  # convert to set for O(1) lookups
-
+def cache(ignore=None) -> Callable:
+    ignore = set() if ignore is None else set(ignore)
     def decorator(callback):
         _cache = {}
 
@@ -38,8 +34,8 @@ def cache(ignore=None):
             return _cache[key]
 
         return wrapper
-    return decorator
 
+    return decorator
 
 pi        = math.pi
 sin       = math.sin
@@ -52,21 +48,21 @@ radians   = math.radians
 log       = math.log
 
 @njit
-def hsl(h,s,l):
+def hsl(h,s,l) -> tuple[int, int, int]:
     r,g,b = hls_to_rgb(h/360,l/100,s/100)
     return (int(r*255),int(g*255),int(b*255))
 
 @njit
-def distance(p1,p2):
+def distance(p1,p2) -> float:
     return sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
 
-def clamp(num, min_=0, max_=255):
+def clamp(num, min_=0, max_=255) -> int:
     return min(max(num, min_), max_)
 
-def clamp_ints(*args,min=0, max_=255):
+def clamp_ints(*args,min=0, max_=255) -> list[int]:
     return [clamp(int(num),min,max_) for num in args]
 
-def sum_ints(*args):
+def sum_ints(*args) -> list[int]:
     result = [0]*len(args[0])
     for arg in args:
         for i,num in enumerate(arg):
@@ -75,7 +71,7 @@ def sum_ints(*args):
     return result
 
 fonts = {}
-def getFont(size,bold=False,italic=False):
+def getFont(size,bold=False,italic=False) -> Any | pygame.font.Font:
     if (size,bold,italic) in fonts:
         return fonts[size,bold,italic]
 
@@ -83,7 +79,7 @@ def getFont(size,bold=False,italic=False):
     fonts[size,bold,italic] = font
     return font
 
-def drawText(text: str, x: int, y: int, size=10, color=(255, 255, 255), bold=False, italic=False):
+def drawText(text: str, x: int, y: int, size=10, color=(255, 255, 255), bold=False, italic=False) -> None:
     font = getFont(size, bold, italic)
     screen_height = game.height * game.res
     screen_width = game.width * game.res + size
@@ -108,27 +104,28 @@ def drawText(text: str, x: int, y: int, size=10, color=(255, 255, 255), bold=Fal
                 break
             current_width += char_width
 
-        truncated_line = line[:max_chars]
-
-        if truncated_line:
+        if truncated_line := line[:max_chars]:
             surf = font.render(truncated_line, True, color)
             game.disp.blit(surf, (x, render_y))
 
-def drawRect(rect, color, width=0, border_radius=0):
+def drawRect(rect, color, width=0, border_radius=0) -> None:
     pygame.draw.rect(game.disp, color, rect, width, border_radius)
 
-def drawLine(start, end, color, width=1):
+def drawLine(start, end, color, width=1) -> None:
     pygame.draw.line(game.disp, color, start, end, width)
 
 
 ### Shader Functions ###
-def load_as_module(source, name, globals={}):
+def load_as_module(source, name, globals=None) -> types.ModuleType:
+    # sourcery skip: avoid-builtin-shadow
+    if globals is None:
+        globals = {}
     module = types.ModuleType(name)
     module.__dict__.update(globals)
     exec(source, module.__dict__)
     return module
 
-def loadShaderMeta(shader_pack):
+def loadShaderMeta(shader_pack) -> tuple[Literal['Error'], str] | Any:
     metapath = os.path.join(shader_pack, 'shader.json')
 
     with open(metapath) as f:
@@ -152,13 +149,20 @@ def loadShaderMeta(shader_pack):
 
     return meta
 
-def loadShaderFile(shader_pack, shader_file, globals={}):
+def loadShaderFile(shader_pack, shader_file, globals=None):
+    # sourcery skip: avoid-builtin-shadow
+    if globals is None:
+        globals = {}
     meta = loadShaderMeta(shader_pack)
+    if isinstance(meta, tuple) and meta[0] == 'Error':
+        return meta  # propagate error
+
     shader_meta = next((s for s in meta['shaders'] if s['filename'] == shader_file), None)
 
     if shader_meta.get('args'):
-        missing_args = [arg for arg in shader_meta['args'] if arg not in globals]
-        if missing_args:
+        if missing_args := [
+            arg for arg in shader_meta['args'] if arg not in globals
+        ]:
             return 'Error', f'Shader {shader_file} missing {len(missing_args)} arguments: {str(missing_args).strip("[]")}'
 
     with open(os.path.join(shader_pack, shader_file)) as f:
@@ -177,6 +181,9 @@ def loadShaderFile(shader_pack, shader_file, globals={}):
 
 def loadShaders(shader_pack, shader_index=None):
     meta = loadShaderMeta(shader_pack)
+    if not isinstance(meta, dict):
+        return meta
+
     shaders = meta['shaders']
 
     if not shader_index:
@@ -204,7 +211,7 @@ def loadShaders(shader_pack, shader_index=None):
 
     return loadShaderFile(shader_pack, shader['filename'])
 
-def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=[]):
+def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=None) -> pygame.Surface:
     """
         Applies a shader to a surface.
 
@@ -215,6 +222,8 @@ def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=[]):
             mask: A color to not shade. (wont be visible)
             view_rect: Optional (x, y, width, height) to limit shader processing to visible area
     """
+    if args is None:
+        args = []
     # Create a new surface with alpha support
     result_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
 
@@ -261,7 +270,7 @@ def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=[]):
 
     return result_surf
 
-def drawRectShaded(rect, shader, res=4, border_radius=0, args=[]):
+def drawRectShaded(rect, shader, res=4, border_radius=0, args=None) -> None:
     """
     Draw a shaded rectangle with optional rounded corners.
     Uses efficient pygame blending for proper masking and better performance.
@@ -272,6 +281,8 @@ def drawRectShaded(rect, shader, res=4, border_radius=0, args=[]):
         res: Resolution of shader application (pixel size)
         border_radius: Radius for rounded corners
     """
+    if args is None:
+        args = []
     # Create a surface that matches the rectangle's dimensions
     width, height = rect[2], rect[3]
 
@@ -318,7 +329,7 @@ def drawRectShaded(rect, shader, res=4, border_radius=0, args=[]):
     game.disp.blit(result_surface, (rect[0], rect[1]))
 
 @cache()
-def textSize(text,size):
+def textSize(text,size) -> tuple[int | Any, Any]:
     font = getFont(size)
     i = 0
     largestX = 0
@@ -342,10 +353,10 @@ def floodfill(texture, pos, newColor, oldColor):
     if pos[1] > 0: floodfill(texture, (pos[0], pos[1]-1), newColor, oldColor)
     if pos[1] < len(texture[0])-1: floodfill(texture, (pos[0], pos[1]+1), newColor, oldColor)
 
-def keyPressed(key:str):
+def keyPressed(key:str):# -> Any:
     return pygame.key.get_pressed()[eval(f'pygame.K_{key}')]
 
-def modPressed(mod:str):
+def modPressed(mod:str) -> int | Literal[False]:
     mods = pygame.key.get_mods()
     match mod.lower():
         case 'shift':
@@ -388,11 +399,10 @@ class Vec2:
         self._y = value
         self.length = distance((0,0),(value,self.y))
 
-    @njit()
     def normalize(self):
         if self.length == 0:
-            return Vec2(0,0)
-        return Vec2(self.x/self.length,self.y/self.length)
+            return Vec2(0, 0)
+        return Vec2(self.x / self.length, self.y / self.length)
 
     def __eq__(self,other):
         return self.x == other.x and self.y == other.y
@@ -427,10 +437,11 @@ class Vec2:
             raise IndexError
 
     def __round__(self, ndigits=None):
-        return Vec2(round(self.x), round(self.y),ndigits)
+        if ndigits is not None:
+            return Vec2(round(self.x, ndigits), round(self.y, ndigits))
+        return Vec2(round(self.x), round(self.y))
 
-    @njit()
-    def clamp(self,minValue,maxValue):
+    def clamp(self, minValue, maxValue):
         return Vec2(max(minValue, min(self.x, maxValue)), max(minValue, min(self.y, maxValue)))
 
     def draw(self,x,y):
@@ -470,17 +481,16 @@ class Toast:
         return False
 
 class Sprite:
-    def __init__(self, pos, texture, draw = None):
+    def __init__(self, pos, texture, draw=None):
         self.pos = pos
         self.x = pos[0]
         self.y = pos[1]
         if texture:
-            self.width = len(texture)+1
-            self.height = len(texture[0])+1
+            self.width = len(texture)
+            self.height = len(texture[0])
         else:
             self.width = 0
             self.height = 0
-
         self.texture = texture
         self.draw = draw
 
@@ -540,9 +550,9 @@ class Sprite:
 
         return None
 
-    def updateTexture(self,texture):
-        self.width = len(texture)+1
-        self.height = len(texture[0])+1
+    def updateTexture(self, texture):
+        self.width = len(texture)
+        self.height = len(texture[0])
         self.texture = texture
 
     def add(self, game):
@@ -725,11 +735,13 @@ class Game:
             for callback in self.events.get("frame",[]):
                 callback(self.frame)
 
-            pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.clock.get_rawtime()}')
-            pygame.display.update()
+            if self.frame % 10 == 0:
+                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.clock.get_rawtime()}')
+
+            pygame.display.flip()
 
             self.frame += 1
             dt = self.clock.tick_busy_loop(self.max_fps)/1000
 
-__all__ = ["hsl", "distance", "clamp", "clamp_rbg", "getFont", "drawText", "textSize", "floodFill", "keyPressed", "modPressed", "cache", "Vec2", "Sprite", "Toast", "eventMap", "Game"]
+__all__ = ["hsl", "distance", "clamp", "clamp_ints", "getFont", "drawText", "textSize", "floodfill", "keyPressed", "modPressed", "cache", "Vec2", "Sprite", "Toast", "eventMap", "Game"]
 
