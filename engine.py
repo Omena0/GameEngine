@@ -1,5 +1,6 @@
 from typing import Callable, Any, Literal
 from colorsys import hls_to_rgb
+from ast import literal_eval
 from numba import njit
 import pygame.gfxdraw
 import pygame
@@ -9,7 +10,7 @@ import math
 import json
 import os
 
-VERSION = 11
+VERSION = 12
 
 dt = 1
 
@@ -128,6 +129,13 @@ def drawLine(start, end, color, width=1) -> None:
 ### Shader Functions ###
 # Cache for static shader surfaces
 _static_shader_cache = {}
+
+def convert_type(s):
+    """Convert a string to its Python literal type if possible."""
+    try:
+        return literal_eval(s)
+    except Exception:
+        return s
 
 def load_as_module(source, name, globals=None) -> types.ModuleType:
     # sourcery skip: avoid-builtin-shadow
@@ -817,4 +825,4 @@ class Game:
             self.clock.tick(self.max_fps)
 
 
-__all__ = ["hsl", "distance", "clamp", "clamp_ints", "getFont", "drawText", "textSize", "floodfill", "keyPressed", "modPressed", "cache", "Vec2", "Sprite", "Toast", "eventMap", "Game", "clearStaticShaderCache"]
+__all__ = ["hsl", "distance", "clamp", "clamp_ints", "getFont", "drawText", "textSize", "floodfill", "keyPressed", "modPressed", "cache", "Vec2", "Sprite", "Toast", "eventMap", "Game", "clearStaticShaderCache", "convert_type"]

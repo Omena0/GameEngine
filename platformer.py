@@ -1,19 +1,16 @@
 from tkinter import colorchooser, filedialog
 from collections.abc import Callable
 from levelLoader import Level
-from ast import literal_eval
 import pygame_textinput
 import engine as gl
+from enums import *
 import time as t
 import os
 
-VERSION = 5
+VERSION = 6
 
-def convert_type(s):
-    try:
-        return literal_eval(s)
-    except Exception:
-        return s
+# Use convert_type from engine
+convert_type = gl.convert_type
 
 ### [Screen()]
 class Screen:
@@ -127,13 +124,11 @@ background = gl.applyShader(gl.pygame.Surface((game.width, game.height)), shader
 background = gl.pygame.transform.scale(background, (game.disp.get_width(), game.disp.get_height()))
 
 # Add a player sprite
+# 6x6 red square
 player_texture = [
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
+    [
+        (255, 0, 0) for _ in range(6)
+    ] for _ in range(6)
 ]
 
 player = gl.Sprite((game.width // 2, game.height // 3*2), player_texture).add(game)
@@ -240,6 +235,7 @@ class Text(Object):
 
         gl.drawText(self.attributes['text'], self.sprite.x*game.res, self.sprite.y*game.res, self.attributes['size'], self.attributes['color'], self.attributes['bold'], self.attributes['italic'])
 
+# Trigger type object definition
 ### [TriggerType()]
 class TriggerType:
     def __init__(self, type:str, run:Callable, color=(255,0,0)):
@@ -315,39 +311,13 @@ class TriggerType:
 
 triggerTypes = []
 
-### [Enums]
-class ObjectType:
-    platform = 0
-    text = 1
-    trigger = 2
-
-class TriggerActivationType:
-    vertical = 0
-    horizontal = 1
-    touch = 2
-    manual = 3
-
-class TriggerActivationBehavior:
-    once = 0
-    repeat = 1
-    continuous = 2
-    never = 3
-
-class TriggerState:
-    ready = 0
-    triggered = 1
-
-class TriggerTypes:
-    move = 0
-    spawn = 1
-
+# Trigger decorator
 def trigger(type, color):
     def decorator(func):
         TriggerType(type, func, color)
     return decorator
 
-# Define trigger types
-
+# Define actual triggers
 @trigger(TriggerTypes.move, (254, 46, 254))
 def moveTrigger(self):
     for targetId in self.attributes['targets']:
