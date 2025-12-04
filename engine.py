@@ -2,9 +2,9 @@ from typing import Callable, Any, Literal
 from colorsys import hls_to_rgb
 from numba import njit
 import pygame.gfxdraw
-import functools
 import pygame
 import types
+import time
 import math
 import json
 import os
@@ -20,7 +20,6 @@ def cache(ignore=None) -> Callable:
     def decorator(callback):
         _cache = {}
 
-        @functools.wraps(callback)
         def wrapper(*args):
             # Avoid building tuple if no ignore — fast path
             if ignore:
@@ -82,7 +81,7 @@ def getFont(size,bold=False,italic=False) -> Any | pygame.font.Font:
 def drawText(text: str, x: int, y: int, size=10, color=(255, 255, 255), bold=False, italic=False) -> None:
     font = getFont(size, bold, italic)
     screen_height = game.height * game.res
-    screen_width = game.width * game.res + size
+    screen_width = game.width * game.res
 
     for i, line in enumerate(text.splitlines()):
         if not line:
@@ -94,19 +93,30 @@ def drawText(text: str, x: int, y: int, size=10, color=(255, 255, 255), bold=Fal
         if render_y >= screen_height or render_y + size < 0:
             continue
 
-        # Efficient single-pass character rendering
-        current_width = 0
-        max_chars = len(line)
-        for j, char in enumerate(line):
-            char_width = textSize(char, size)[0]
-            if current_width + char_width > screen_width:
-                max_chars = j
-                break
-            current_width += char_width
+        # Character-by-character horizontal culling
+        char_x = x
+        visible_chars = []
+        visible_start_x = None
 
-        if truncated_line := line[:max_chars]:
-            surf = font.render(truncated_line, True, color)
-            game.disp.blit(surf, (x, render_y))
+        for char in line:
+            char_width = textSize(char, size)[0]
+            char_end_x = char_x + char_width
+
+            # Check if character is visible
+            if char_end_x > 0 and char_x < screen_width:
+                if visible_start_x is None:
+                    visible_start_x = char_x
+                visible_chars.append(char)
+            elif char_x >= screen_width:
+                # Past right edge, no more visible chars
+                break
+
+            char_x = char_end_x
+
+        if visible_chars and visible_start_x is not None:
+            visible_text = ''.join(visible_chars)
+            surf = font.render(visible_text, True, color)
+            game.disp.blit(surf, (visible_start_x, render_y))
 
 def drawRect(rect, color, width=0, border_radius=0) -> None:
     pygame.draw.rect(game.disp, color, rect, width, border_radius)
@@ -116,6 +126,9 @@ def drawLine(start, end, color, width=1) -> None:
 
 
 ### Shader Functions ###
+# Cache for static shader surfaces
+_static_shader_cache = {}
+
 def load_as_module(source, name, globals=None) -> types.ModuleType:
     # sourcery skip: avoid-builtin-shadow
     if globals is None:
@@ -173,6 +186,23 @@ def loadShaderFile(shader_pack, shader_file, globals=None):
             if shader_meta.get('cache', False):
                 shader_func = cache(ignore=shader_meta.get('ignore_args', []))(shader_func)
 
+            # Build static cache key from args (excluding 'gl')
+            static_cache_key = None
+            if shader_meta.get('static', False):
+                cache_args = {k: v for k, v in globals.items() if k != 'gl' and k in shader_meta.get('args', [])}
+                # Convert to hashable tuple of sorted items, converting lists to tuples
+                def make_hashable(obj):
+                    if isinstance(obj, list):
+                        return tuple(make_hashable(item) for item in obj)
+                    elif isinstance(obj, dict):
+                        return tuple(sorted((k, make_hashable(v)) for k, v in obj.items()))
+                    return obj
+                static_cache_key = (shader_pack, shader_file, make_hashable(cache_args))
+
+            # Attach metadata to the function
+            shader_func._static = shader_meta.get('static', False)
+            shader_func._static_cache_key = static_cache_key
+
             return shader_func
 
         except Exception as e:
@@ -224,6 +254,13 @@ def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=None) -> py
     """
     if args is None:
         args = []
+
+    # Check for static shader cache
+    if hasattr(shader, '_static') and shader._static and shader._static_cache_key:
+        cache_key = (shader._static_cache_key, surf.get_size(), res)
+        if cache_key in _static_shader_cache:
+            return _static_shader_cache[cache_key].copy()
+
     # Create a new surface with alpha support
     result_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
 
@@ -267,6 +304,11 @@ def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=None) -> py
 
             except IndexError:
                 continue  # Handle edge case errors
+
+    # Cache static shader result
+    if hasattr(shader, '_static') and shader._static and shader._static_cache_key:
+        cache_key = (shader._static_cache_key, surf.get_size(), res)
+        _static_shader_cache[cache_key] = result_surf.copy()
 
     return result_surf
 
@@ -335,7 +377,7 @@ def textSize(text,size) -> tuple[int | Any, Any]:
     largestX = 0
     for line in text.splitlines():
         if line:
-            w = font.render(line,1,(255,255,255)).get_width()
+            w = font.size(line)[0]
             if w > largestX:
                 largestX = w
             i += 1.1
@@ -584,7 +626,9 @@ eventMap = {
 }
 
 class Game:
-    __slots__ = ['id', 'version', 'title', 'size', 'width', 'height', 'res', 'max_fps', 'bg', 'sprites', 'toasts', 'spriteShaders', 'backgroundShaders', 'events', 'disp', 'clock', 'running', 'frame']
+    __slots__ = ['id', 'version', 'title', 'size', 'width', 'height', 'res', 'max_fps',
+                 'bg', 'sprites', 'toasts', 'spriteShaders', 'backgroundShaders', 'events',
+                 'disp', 'clock', 'running', 'frame', 'dt']
 
     def __init__(self, title, size, res=16, max_fps=0, bg=(0,0,0), flags=0):
         global game
@@ -597,6 +641,7 @@ class Game:
         self.res = res
         self.max_fps = max_fps
         self.bg = bg
+        self.frame = 0
 
         self.sprites = []
         self.toasts  = []
@@ -606,6 +651,8 @@ class Game:
 
         self.disp = pygame.display.set_mode((self.width*res,self.height*res),vsync=True,flags=flags)
         self.clock = pygame.time.Clock()
+
+        self.dt = 0.001
 
     def _draw(self):  # sourcery skip: low-code-quality
         # Background shader pass
@@ -624,6 +671,9 @@ class Game:
 
                     if col is not None:
                         shader_surface.set_at((x, y), col)
+
+            self.width  = self.disp.get_width()  // self.res
+            self.height = self.disp.get_height() // self.res
 
             # Scale shader surface to screen
             pygame.transform.scale(shader_surface, (self.width * self.res, self.height * self.res), self.disp)
@@ -727,6 +777,7 @@ class Game:
         self.frame = 0
 
         while self.running:
+            start = time.perf_counter()
             if callback:
                 callback(self.frame)
 
@@ -756,12 +807,14 @@ class Game:
                 callback(self.frame)
 
             if self.frame % 10 == 0:
-                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.clock.get_rawtime()}')
+                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.dt*1000:.3f} ms')
 
             pygame.display.flip()
 
             self.frame += 1
-            dt = self.clock.tick_busy_loop(self.max_fps)/1000
+            self.dt = time.perf_counter() - start
 
-__all__ = ["hsl", "distance", "clamp", "clamp_ints", "getFont", "drawText", "textSize", "floodfill", "keyPressed", "modPressed", "cache", "Vec2", "Sprite", "Toast", "eventMap", "Game"]
+            self.clock.tick(self.max_fps)
 
+
+__all__ = ["hsl", "distance", "clamp", "clamp_ints", "getFont", "drawText", "textSize", "floodfill", "keyPressed", "modPressed", "cache", "Vec2", "Sprite", "Toast", "eventMap", "Game", "clearStaticShaderCache"]

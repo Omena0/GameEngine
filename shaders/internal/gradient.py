@@ -44,4 +44,6 @@ def shader(color, x, y, frame):
     g = to_srgb(g_lin)
     b = to_srgb(b_lin)
 
+    print(r)
+
     return gl.clamp_ints(r, g, b)

@@ -123,6 +123,9 @@ shaders = {
     })
 }
 
+background = gl.applyShader(gl.pygame.Surface((game.width, game.height)), shaders['gradient'], res=1)
+background = gl.pygame.transform.scale(background, (game.disp.get_width(), game.disp.get_height()))
+
 # Add a player sprite
 player_texture = [
     [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
@@ -430,10 +433,12 @@ def load_level(path):
 def frame(frame):  # sourcery skip: low-code-quality
     # UI Screens
     if screen == Screen.LEVEL_SELECT:
+        game.max_fps = 240
         player.hidden = True
         draw_level_select()
 
     elif screen == Screen.PLAY:
+        game.max_fps = 60
         player.hidden = False
         physics()
         if not hide_gui:
@@ -454,7 +459,7 @@ def physics():  # sourcery skip: low-code-quality
     ## [GameLoop/Check movement]
     pressedX = 0
     pressedY = 0
-    if not (gl.modPressed('shift') or gl.modPressed('ctrl') or typing):
+    if not (gl.modPressed('shift') or gl.modPressed('ctrl') or gl.modPressed('alt') or typing):
         if gl.keyPressed('w'):
             pressedY += 1
         if gl.keyPressed('a'):
@@ -634,7 +639,7 @@ def draw_level_select():
     if not levels:
         scan_levels()
 
-    game.backgroundShaders = [shaders["gradient"]]
+    game.disp.blit(background, (0,0))
 
     # Draw level list area background
     list_x = game.width - 33

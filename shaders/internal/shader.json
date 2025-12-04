@@ -11,8 +11,7 @@
             "type": "background",
             "filename": "gradient.py",
             "args": ["gl", "colors", "angle"],
-            "cache": true,
-            "ignore_args": [0,3]
+            "static": true
         }
     ]
 }
