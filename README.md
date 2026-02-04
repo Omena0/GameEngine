@@ -1,10 +1,8 @@
 
 # GameEngine
 
-Simple pygame sprite renderer.
-
-You can use shaders to add effects to your games.
+A simple game engine for general use
 
 ## Platformer
 
-An actual game with a level editor, level loader and shader loader
+An actual platformer game with a level editor, level loader and shader loader
