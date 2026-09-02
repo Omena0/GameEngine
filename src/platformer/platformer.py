@@ -102,7 +102,7 @@ selectedCol = (0,255,0)
 
 
 ### [Vars/Level]
-objects = []
+objects: list[gl.Sprite] = []
 triggers = []
 levelMeta = {"name": "Unnamed", "description": "No description"}
 
@@ -159,10 +159,10 @@ class Object:
 
         self.texture = gen_texture()
         if self.texture == [[]]:
-            self.sprite = gl.Sprite(self.pos, self.texture).add(game)
+            self.sprite = gl.Sprite(self.pos, self.texture, render).add(game)
 
         else:
-            self.sprite = gl.Sprite(self.pos, self.texture, render).add(game)
+            self.sprite = gl.Sprite(self.pos, self.texture).add(game)
 
         self.sprite.object = self
 
@@ -462,6 +462,10 @@ def physics():  # sourcery skip: low-code-quality
         startTime = t.time()
 
     ### [GameLoop/Collisions]
+    # Sync sprite positions with the freshly-integrated cx/cy before testing
+    # collisions — otherwise sprite.y is stale by this frame's velocity delta
+    # and the resolution targets the wrong place.
+    updateCamera()
     onGround = False
     collisions = player.collides_with(objects)
     if collisions and not noclip:
@@ -490,14 +494,24 @@ def physics():  # sourcery skip: low-code-quality
             collisions = player.collides_with(objects)
             for sprite in collisions:
                 if not getattr(sprite, 'physics', True): continue
-                while player.collides_with(sprite):
-                    cy += 0.01
+                # Land the player onto the platform surface. The old code used
+                # `cy += 0.01` (≈0.08px at 8x) which left ~1 tile of overlap, plus
+                # an unconditional `cy -= 0.015` drift that shoved the player back
+                # into the ground every frame. We ease the platform up to the
+                # player's resting bottom each frame so the landing feels smooth
+                # rather than a hard teleport, and converge to a flush rest.
+                top = sprite.y
+                rest_bottom = player.pos[1] + player.height
+                if rest_bottom <= top + 0.5:
+                    cy += 0.4 * (rest_bottom - top)
                     updateCamera()
+                else:
+                    while player.collides_with(sprite):
+                        cy += 0.01
+                        updateCamera()
 
-            cy -= 0.015
-
-    for trigger in triggers:
-        trigger.check()
+        for trigger in triggers:
+            trigger.check()
 
     ### [GameLoop/Gravity]
     if not flight and not onGround:
@@ -891,7 +905,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
     key = key['key']
 
     if typing:
-        if key == 27:
+        if key == gl.pygame.K_ESCAPE:
             typing = False
         return
 
@@ -902,6 +916,9 @@ def keyDown(key):  # sourcery skip: low-code-quality
         case gl.pygame.K_ESCAPE:
             if screen == Screen.PLAY:
                 screen = Screen.LEVEL_SELECT
+                for object in objects:
+                    game.sprites.remove(object)
+
                 objects.clear()
                 toast('Returned to level select')
                 return
@@ -916,8 +933,10 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 cy += vel[1]
 
         case gl.pygame.K_UP:
-            if gl.pygame.key.get_mods(): return
-            if jumps:
+            if flight:
+                cy += 1
+
+            elif jumps:
                 jumps -= 1
                 vel[1] += jumpForce
                 cy += vel[1]

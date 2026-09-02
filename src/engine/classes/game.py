@@ -1,6 +1,6 @@
+from threading import Thread
 import pygame.gfxdraw
 import pygame
-import time
 
 from .. import constants
 from ..modules import draw, shaders
@@ -121,7 +121,7 @@ class Game:
                     # Draw pixel
                     pygame.gfxdraw.box(self.disp, ((sprite.x + x) * self.res, (sprite.y + y) * self.res, self.res, self.res), col)
 
-        # Toast rendering
+    def _draw_toasts(self):
         removed = 0
         for toast in self.toasts.copy():
             toast._render()
@@ -172,11 +172,10 @@ class Game:
         self.running = True
         self.frame = 0
 
-        while self.running:
-            start = time.perf_counter()
-            if callback:
-                callback(self.frame)
+        if callback:
+            Thread(target=callback).start()
 
+        while self.running:
             events = pygame.event.get()
 
             # Event hooks
@@ -202,13 +201,14 @@ class Game:
             for callback in self.events.get("frame",[]):
                 callback(self.frame)
 
+            self._draw_toasts()
+
             if self.frame % 10 == 0:
-                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.dt*1000:.3f} ms')
+                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.dt*1000} ms')
 
             pygame.display.flip()
 
             self.frame += 1
-            self.dt = time.perf_counter() - start
 
-            self.clock.tick(self.max_fps)
+            self.dt = self.clock.tick(self.max_fps) / 1000
 

@@ -32,14 +32,18 @@ class Sprite:
                 self.x < 0
                 or self.y < 0
                 or self.x + self.width > self.game.width
-                or self.y-1 + self.height > self.game.height
+                or self.y + self.height > self.game.height
             )
 
+        # Standard AABB overlap with a small resting tolerance so the
+        # camera-follow velocity offset doesn't toggle onGround every frame
+        # and re-apply gravity (causing the player to jitter/sink into floors).
+        eps = 0.5
         return sprites if (
-            self.x-1 + self.width > sprites.x
-            and self.x+1 < sprites.x + sprites.width
-            and self.y-1 + self.height > sprites.y
-            and self.y+1 < sprites.y + sprites.height
+            self.x + self.width >= sprites.x - eps
+            and self.x <= sprites.x + sprites.width + eps
+            and self.y + self.height >= sprites.y - eps
+            and self.y <= sprites.y + sprites.height + eps
         ) else None
 
     def collidepoint(self, point):
