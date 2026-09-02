@@ -1,16 +1,18 @@
+from __future__ import annotations
+
 from tkinter import colorchooser, filedialog
 from collections.abc import Callable
-from levelLoader import Level
+from .levelLoader import Level
 import pygame_textinput
+from .enums import *
 import engine as gl
-from enums import *
 import time as t
 import os
 
 VERSION = 6
 
 # Use convert_type from engine
-convert_type = gl.convert_type
+from engine import convert_type
 
 ### [Screen()]
 class Screen:
@@ -113,14 +115,17 @@ cx,cy = 0,10
 
 # Load Shaders
 shaders = {
-    "gradient": gl.loadShaderFile('shaders/internal','gradient.py', {
+    "bg": gl.loadShaderFile('shaders/internal','gradient.py', {
         "gl": gl,
         "colors": [(120, 40, 255), (200, 30, 100)],
         "angle": 90,  # Angle in degrees
+    }),
+    "gradient": gl.loadShaderFile('shaders/shader', 'background.py', {
+        "gl": gl
     })
 }
 
-background = gl.applyShader(gl.pygame.Surface((game.width, game.height)), shaders['gradient'], res=1)
+background = gl.applyShader(gl.pygame.Surface((game.width, game.height)), shaders['bg'], res=1)
 background = gl.pygame.transform.scale(background, (game.disp.get_width(), game.disp.get_height()))
 
 # Add a player sprite
@@ -145,12 +150,19 @@ class Object:
         self.shader = shader
         self.attributes = attributes
 
-        if hasattr(self,'gen_texture'):
-            self.texture = self.gen_texture()
-            self.sprite = gl.Sprite(self.pos, self.texture).add(game)
+        if not hasattr(self, 'gen_texture'):
+            gen_texture = lambda: [[]]
         else:
-            self.texture = [[]]
-            self.sprite = gl.Sprite(self.pos, self.texture, self.render).add(game)
+            gen_texture = self.gen_texture
+
+        render = self.render if hasattr(self, 'render') else (lambda: None)
+
+        self.texture = gen_texture()
+        if self.texture == [[]]:
+            self.sprite = gl.Sprite(self.pos, self.texture).add(game)
+
+        else:
+            self.sprite = gl.Sprite(self.pos, self.texture, render).add(game)
 
         self.sprite.object = self
 
@@ -177,7 +189,7 @@ class Platform(Object):
         self.sprite.platform = self
 
     def gen_texture(self):
-        self.texture = [[self.shader() if self.shader else (255,255,255) for _ in range(self.height)] for _ in range(self.width)]
+        self.texture = [[self.shader() if self.shader else (255,255,255) for _ in range(self.height)] for _ in range(int(self.width))]
         return self.texture
 
     def setPos(self, x, y):
