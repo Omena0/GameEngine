@@ -1,19 +1,18 @@
+from __future__ import annotations
+
 from tkinter import colorchooser, filedialog
 from collections.abc import Callable
-from levelLoader import Level
-from ast import literal_eval
+from .levelLoader import Level
 import pygame_textinput
+from .enums import *
 import engine as gl
 import time as t
 import os
 
-VERSION = 5
+VERSION = 6
 
-def convert_type(s):
-    try:
-        return literal_eval(s)
-    except Exception:
-        return s
+# Use convert_type from engine
+from engine import convert_type
 
 ### [Screen()]
 class Screen:
@@ -103,7 +102,7 @@ selectedCol = (0,255,0)
 
 
 ### [Vars/Level]
-objects = []
+objects: list[gl.Sprite] = []
 triggers = []
 levelMeta = {"name": "Unnamed", "description": "No description"}
 
@@ -116,24 +115,25 @@ cx,cy = 0,10
 
 # Load Shaders
 shaders = {
-    "gradient": gl.loadShaderFile('shaders/internal','gradient.py', {
+    "bg": gl.loadShaderFile('shaders/internal','gradient.py', {
         "gl": gl,
         "colors": [(120, 40, 255), (200, 30, 100)],
         "angle": 90,  # Angle in degrees
+    }),
+    "gradient": gl.loadShaderFile('shaders/shader', 'background.py', {
+        "gl": gl
     })
 }
 
-background = gl.applyShader(gl.pygame.Surface((game.width, game.height)), shaders['gradient'], res=1)
+background = gl.applyShader(gl.pygame.Surface((game.width, game.height)), shaders['bg'], res=1)
 background = gl.pygame.transform.scale(background, (game.disp.get_width(), game.disp.get_height()))
 
 # Add a player sprite
+# 6x6 red square
 player_texture = [
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
-    [(255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0), (255, 0, 0)],
+    [
+        (255, 0, 0) for _ in range(6)
+    ] for _ in range(6)
 ]
 
 player = gl.Sprite((game.width // 2, game.height // 3*2), player_texture).add(game)
@@ -150,12 +150,19 @@ class Object:
         self.shader = shader
         self.attributes = attributes
 
-        if hasattr(self,'gen_texture'):
-            self.texture = self.gen_texture()
-            self.sprite = gl.Sprite(self.pos, self.texture).add(game)
+        if not hasattr(self, 'gen_texture'):
+            gen_texture = lambda: [[]]
         else:
-            self.texture = [[]]
-            self.sprite = gl.Sprite(self.pos, self.texture, self.render).add(game)
+            gen_texture = self.gen_texture
+
+        render = self.render if hasattr(self, 'render') else (lambda: None)
+
+        self.texture = gen_texture()
+        if self.texture == [[]]:
+            self.sprite = gl.Sprite(self.pos, self.texture, render).add(game)
+
+        else:
+            self.sprite = gl.Sprite(self.pos, self.texture).add(game)
 
         self.sprite.object = self
 
@@ -182,7 +189,7 @@ class Platform(Object):
         self.sprite.platform = self
 
     def gen_texture(self):
-        self.texture = [[self.shader() if self.shader else (255,255,255) for _ in range(self.height)] for _ in range(self.width)]
+        self.texture = [[self.shader() if self.shader else (255,255,255) for _ in range(self.height)] for _ in range(int(self.width))]
         return self.texture
 
     def setPos(self, x, y):
@@ -240,6 +247,7 @@ class Text(Object):
 
         gl.drawText(self.attributes['text'], self.sprite.x*game.res, self.sprite.y*game.res, self.attributes['size'], self.attributes['color'], self.attributes['bold'], self.attributes['italic'])
 
+# Trigger type object definition
 ### [TriggerType()]
 class TriggerType:
     def __init__(self, type:str, run:Callable, color=(255,0,0)):
@@ -315,39 +323,13 @@ class TriggerType:
 
 triggerTypes = []
 
-### [Enums]
-class ObjectType:
-    platform = 0
-    text = 1
-    trigger = 2
-
-class TriggerActivationType:
-    vertical = 0
-    horizontal = 1
-    touch = 2
-    manual = 3
-
-class TriggerActivationBehavior:
-    once = 0
-    repeat = 1
-    continuous = 2
-    never = 3
-
-class TriggerState:
-    ready = 0
-    triggered = 1
-
-class TriggerTypes:
-    move = 0
-    spawn = 1
-
+# Trigger decorator
 def trigger(type, color):
     def decorator(func):
         TriggerType(type, func, color)
     return decorator
 
-# Define trigger types
-
+# Define actual triggers
 @trigger(TriggerTypes.move, (254, 46, 254))
 def moveTrigger(self):
     for targetId in self.attributes['targets']:
@@ -480,6 +462,10 @@ def physics():  # sourcery skip: low-code-quality
         startTime = t.time()
 
     ### [GameLoop/Collisions]
+    # Sync sprite positions with the freshly-integrated cx/cy before testing
+    # collisions — otherwise sprite.y is stale by this frame's velocity delta
+    # and the resolution targets the wrong place.
+    updateCamera()
     onGround = False
     collisions = player.collides_with(objects)
     if collisions and not noclip:
@@ -508,14 +494,24 @@ def physics():  # sourcery skip: low-code-quality
             collisions = player.collides_with(objects)
             for sprite in collisions:
                 if not getattr(sprite, 'physics', True): continue
-                while player.collides_with(sprite):
-                    cy += 0.01
+                # Land the player onto the platform surface. The old code used
+                # `cy += 0.01` (≈0.08px at 8x) which left ~1 tile of overlap, plus
+                # an unconditional `cy -= 0.015` drift that shoved the player back
+                # into the ground every frame. We ease the platform up to the
+                # player's resting bottom each frame so the landing feels smooth
+                # rather than a hard teleport, and converge to a flush rest.
+                top = sprite.y
+                rest_bottom = player.pos[1] + player.height
+                if rest_bottom <= top + 0.5:
+                    cy += 0.4 * (rest_bottom - top)
                     updateCamera()
+                else:
+                    while player.collides_with(sprite):
+                        cy += 0.01
+                        updateCamera()
 
-            cy -= 0.015
-
-    for trigger in triggers:
-        trigger.check()
+        for trigger in triggers:
+            trigger.check()
 
     ### [GameLoop/Gravity]
     if not flight and not onGround:
@@ -909,7 +905,7 @@ def keyDown(key):  # sourcery skip: low-code-quality
     key = key['key']
 
     if typing:
-        if key == 27:
+        if key == gl.pygame.K_ESCAPE:
             typing = False
         return
 
@@ -920,6 +916,9 @@ def keyDown(key):  # sourcery skip: low-code-quality
         case gl.pygame.K_ESCAPE:
             if screen == Screen.PLAY:
                 screen = Screen.LEVEL_SELECT
+                for object in objects:
+                    game.sprites.remove(object)
+
                 objects.clear()
                 toast('Returned to level select')
                 return
@@ -934,8 +933,10 @@ def keyDown(key):  # sourcery skip: low-code-quality
                 cy += vel[1]
 
         case gl.pygame.K_UP:
-            if gl.pygame.key.get_mods(): return
-            if jumps:
+            if flight:
+                cy += 1
+
+            elif jumps:
                 jumps -= 1
                 vel[1] += jumpForce
                 cy += vel[1]
