@@ -1,2 +1,3 @@
 *.pyd
 *.pyc
+src/drop/user.json

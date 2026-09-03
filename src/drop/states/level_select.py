@@ -1,7 +1,8 @@
 from dataclasses import dataclass
+import json
 from pathlib import Path
 
-from .play import Object
+from .play import Object, USER_FILE
 import engine as gl
 
 
@@ -63,6 +64,7 @@ class LevelSelectState:
         self.selected = 0
         self.scroll = 0
         self.selected_level = None
+        self.cleared_levels = set()
 
     def on_enter(self):
         levels = []
@@ -75,6 +77,9 @@ class LevelSelectState:
             levels,
             key=lambda item: (item[1].length, len(item[0].name), item[0].name.lower()),
         )
+        if USER_FILE.exists():
+            with open(USER_FILE) as user_file:
+                self.cleared_levels = set(json.load(user_file).get('cleared_levels', []))
         self.selected = min(self.selected, max(0, len(self.levels) - 1))
         self.scroll = 0
         if self.levels:
@@ -94,8 +99,12 @@ class LevelSelectState:
 
         visible_rows = (LIST_BOTTOM - LIST_TOP) // ROW_HEIGHT
         for index in range(self.scroll, min(len(self.levels), self.scroll + visible_rows)):
-            level = self.levels[index][1]
+            path, level = self.levels[index]
             color = (255, 255, 0) if index == self.selected else (255, 255, 255)
+            if path.name in self.cleared_levels:
+                color = (80, 220, 220)
+            if index == self.selected:
+                color = (80, 220, 220) if path.name in self.cleared_levels else (255, 255, 0)
             gl.drawText(level.name, 75, LIST_TOP + (index - self.scroll) * ROW_HEIGHT, 24, color)
 
         if self.selected_level.description:
