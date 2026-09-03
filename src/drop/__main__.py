@@ -1,11 +1,10 @@
 import engine as gl
-from pathlib import Path
 from .states.editor import EditorState
 from .states.level_select import LevelSelectState, load_level
 from .states.play import PlayState
 
 
-game = gl.Game('Drop', (500, 700), res=10, max_fps=60, vsync=False)
+game = gl.Game('Drop', (500, 700), res=10, max_fps=1000, vsync=False)
 current_state = None
 
 

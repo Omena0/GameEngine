@@ -115,7 +115,7 @@ class EditorState:
         width = obj.width * 5
         height = obj.height * TIME_SCALE
 
-        color = SELECTED_COLOR if selected else OBJECT_COLOR
+        color = SELECTED_COLOR if selected else gl.clamp_ints(255-obj.speed*100, 255-obj.speed*100, 255)
 
         gl.drawRect((x, y, width, height), color)
         gl.drawRect((x, y, width, height), (0, 0, 0), 2)
@@ -538,9 +538,9 @@ class EditorState:
             root.withdraw()
             file_name = filedialog.asksaveasfilename(
                 initialdir=str(LEVELS_DIR),
-                initialfile='level.lvl',
-                defaultextension='.lvl',
-                filetypes=(('Drop levels', '*.lvl'), ('All files', '*.*')),
+                initialfile='level.txt',
+                defaultextension='.txt',
+                filetypes=(('Level files', '*.txt'), ('All files', '*.*')),
             )
 
             root.destroy()

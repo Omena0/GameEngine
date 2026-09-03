@@ -207,8 +207,8 @@ class Game:
 
             self._draw_toasts()
 
-            if self.frame % (self.max_fps//6 if self.vsync else 10) == 0:
-                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.frameTime*1000:.1f} ms')
+            if self.frame % (10 if self.vsync else self.max_fps//8) == 0:
+                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2):5} FrameTime: {self.frameTime*1000:.1f} ms')
 
             pygame.display.flip()
 

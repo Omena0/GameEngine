@@ -104,11 +104,24 @@ class LevelSelectState:
         visible_rows = (LIST_BOTTOM - LIST_TOP) // ROW_HEIGHT
         for index in range(self.scroll, min(len(self.levels), self.scroll + visible_rows)):
             path, level = self.levels[index]
+
+            y = LIST_TOP + (index - self.scroll) * ROW_HEIGHT
+
+            color = (255, 255, 0)
             if level_hash(path) in self.cleared_levels:
-                color = (80, 220, 220)
+                color = (10, 255, 255)
+
+            size = gl.textSize(level.name, 24)
+            gl.drawText(level.name, 75, y, 24, color)
+
             if index == self.selected:
-                color = (80, 220, 220) if level_hash(path) in self.cleared_levels else (255, 255, 0)
-            gl.drawText(level.name, 75, LIST_TOP + (index - self.scroll) * ROW_HEIGHT, 24, color)
+                gl.drawLine(
+                    (75, y+size[1]-5),
+                    (75+size[0], y+size[1]-5),
+                    (255,255,255),
+                    2
+                )
+
 
         if self.selected_level.description:
             gl.drawText(self.selected_level.description, 75, LIST_BOTTOM + 10, 16)

@@ -98,9 +98,11 @@ class PlayState:
     def collision_check(self, x, y, width, height) -> bool:
         player_center_x = self.player_x * 5
         player_center_y = 50
-        player_radius = PLAYER_SIZE / 2
+        player_radius = PLAYER_SIZE / 2.1
+
         closest_x = max(x, min(player_center_x, x + width))
         closest_y = max(y, min(player_center_y, y + height))
+
         distance_x = player_center_x - closest_x
         distance_y = player_center_y - closest_y
 
@@ -133,10 +135,12 @@ class PlayState:
             if y > 700:
                 continue
 
-            color = (255, 255, 255)
+            if mv_speed:
+                color = gl.clamp_ints(abs(mv_speed*255), 50, abs(mv_speed*255))
+            else:
+                color = gl.clamp_ints(255-speed*100, 255-speed*100, 255)
 
             if abs(y + height - SPEED_APPLY_POINT) < 10 and obj not in self.applied_move_speeds:
-                color = (0, 255, 0)
                 self.move_speed += mv_speed
                 self.applied_move_speeds.add(obj)
 
@@ -147,13 +151,13 @@ class PlayState:
                     shader, (x, y, width, height), 1,
                     args=(
                         [ # Colors
-                            (255, 50,  50),
-                            (255, 150, 150)
+                            (255, 75, 75),
+                            (200, 0,  0 )
                         ],
                         45, # angle
                         width, height, # Width, height
                         0,  # Offset x
-                        0   # Offset y
+                        -20   # Offset y
                     )
                 )
                 continue
@@ -171,15 +175,10 @@ class PlayState:
             (255, 0, 0),
         )
 
-        if self.game_over:
+        if self.game_over and not self.level_passed:
             size = gl.textSize('Level Failed', 40, True)
             gl.drawTextShaded(
-                shader,
-                'Level Failed',
-                126,
-                250,
-                40,
-                True,
+                shader, 'Level Failed', 126, 250, 40, True,
                 args=(
                     [ # Colors
                         (255, 30, 30),
@@ -196,11 +195,10 @@ class PlayState:
             self.draw_pause_menu()
 
         if self.level_passed:
-            text = 'Level passed'
-            text_width = gl.textSize(text, 40)[0]
+            size = gl.textSize('Level Passed', 40)
 
             gl.drawTextShaded(
-                shader, text, (500 - text_width) / 2, 250, 40, True,
+                shader, 'Level Passed', (500 - size[0]) / 2, 250, 40, True,
                 args=(
                     [ # Colors
                         (255, 30, 30),
