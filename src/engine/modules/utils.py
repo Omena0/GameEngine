@@ -43,8 +43,8 @@ def convert_type(s):
         return s
 
 @cache()
-def textSize(text,size) -> tuple[int | Any, Any]:
-    font = getFont(size)
+def textSize(text,size, bold=False,italic=False) -> tuple[int | Any, Any]:
+    font = getFont(size, bold, italic)
     i = 0
     largestX = 0
     for line in text.splitlines():

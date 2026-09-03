@@ -1,23 +1,25 @@
 #type:ignore
 
-SCREEN_W = 100
-SCREEN_H = 75
-
-r1, g1, b1 = colors[0]
-r2, g2, b2 = colors[1]
-
 def to_linear(c):
     return (c / 255) ** 0.5
 
 def to_srgb(c):
     return int((c ** 2) * 255)
 
-def shader(color, x, y, frame):
+def shader(
+        _, x, y, __,
+        colors,
+        angle,
+        width,
+        height,
+        offset_x=0,
+        offset_y=0
+    ):
     r1, g1, b1 = colors[0]
     r2, g2, b2 = colors[1]
 
-    x_norm = x / SCREEN_W
-    y_norm = y / SCREEN_H
+    x_norm = (x+offset_x) / width
+    y_norm = (y+offset_y) / height
 
     angle_rad = gl.radians(angle)
     dx = x_norm - 0.5

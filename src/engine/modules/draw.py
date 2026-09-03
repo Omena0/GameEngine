@@ -139,7 +139,7 @@ def drawTextShaded(shader, text: str, x: int, y: int, size=10, bold=False, itali
 
     # Draw mask
     shaded_surf = drawText(text, 0, 0, size, (255, 255, 255), bold, italic, 'new')
-    shaded_surf = applyShader(shaded_surf, shader, res, (0, 0, 0), args=args)
+    shaded_surf = applyShader(shaded_surf, shader, 1, (0, 0, 0), args=args)
 
     game.disp.blit(shaded_surf, (x,y))
 

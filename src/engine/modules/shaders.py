@@ -21,7 +21,7 @@ def load_as_module(source, name, globals=None) -> ModuleType:
     return module
 
 def loadShaderMeta(shader_pack) -> tuple[Literal['Error'], str] | dict:
-    metapath = os.path.join(shader_pack, 'shader.json')
+    metapath = os.path.join('shaders', shader_pack, 'shader.json')
 
     with open(metapath) as f:
         meta = json.load(f)
@@ -48,6 +48,7 @@ def loadShaderFile(shader_pack, shader_file, globals=None):
     # sourcery skip: avoid-builtin-shadow
     if globals is None:
         globals = {}
+
     meta = loadShaderMeta(shader_pack)
     if isinstance(meta, tuple) and meta[0] == 'Error':
         return meta  # propagate error
@@ -64,7 +65,7 @@ def loadShaderFile(shader_pack, shader_file, globals=None):
         ]:
             return 'Error', f'Shader {shader_file} missing {len(missing_args)} arguments: {str(missing_args).strip("[]")}'
 
-    with open(os.path.join(shader_pack, shader_file)) as f:
+    with open(os.path.join('shaders', shader_pack, shader_file)) as f:
         try:
             module = load_as_module(f.read(), f.name, globals)
             shader_func = module.shader
@@ -186,8 +187,14 @@ def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=None) -> py
 
                 if not new_color:
                     continue
-                rect = (x, y, res, res)
-                pygame.gfxdraw.box(result_surf, rect, new_color)
+                if len(new_color) == 3:
+                    new_color = (*new_color, color.a)
+
+                if res == 1:
+                    result_surf.set_at((x, y), new_color)
+                else:
+                    rect = (x, y, res, res)
+                    pygame.gfxdraw.box(result_surf, rect, new_color)
 
             except IndexError:
                 continue  # Handle edge case errors

@@ -1,6 +1,6 @@
 # type: ignore
 
-def shader(color, x, y, frame, sprite):
+def shader(color, x, y, frame, sprite=None):
     x -= cx
     y -= cy
 

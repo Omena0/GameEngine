@@ -1,10 +1,9 @@
+from tkinter import filedialog, Tk
 from pathlib import Path
-from tkinter import Tk, filedialog
 
-import engine as gl
-
-from .level_select import LEVELS_DIR, Level, load_level
+from .level_select import load_level, LEVELS_DIR, Level
 from .play import Object
+import engine as gl
 
 
 GRID_SIZES = (1, 2, 5, 10, 20)
@@ -16,10 +15,6 @@ TIME_SCALE = 7
 PLAYER_MIDPOINT = 50
 PLAYER_SIZE = 25
 NORMAL_FRAME_RATE = 60
-CONFIRM_RECT = (75, 220, 350, 290)
-SAVE_EXIT_RECT = (100, 390, 140, 50)
-DONT_SAVE_RECT = (260, 390, 140, 50)
-CONTINUE_RECT = (175, 460, 150, 40)
 
 
 class EditorState:
@@ -52,8 +47,6 @@ class EditorState:
         self.action_current = set()
         self.action_before = None
         self.action_preserve_selection = False
-        self.confirm_leave = False
-        self.confirm_hovered = None
         self.history = [self.snapshot()]
         self.history_index = 0
 
@@ -62,7 +55,7 @@ class EditorState:
         return GRID_SIZES[self.grid_index]
 
     def on_enter(self):
-        pass
+        self.update_title()
 
     def update(self, dt):
         if self.playing:
@@ -70,8 +63,15 @@ class EditorState:
             self.player_x += self.move_state * dt * 50
             self.player_x = gl.clamp(self.player_x, min_=PLAYER_SIZE / 10, max_=100 - PLAYER_SIZE / 10)
 
+    def update_title(self):
+        file_name = self.level.path.name if self.level and self.level.path else 'untitled.txt'
+        suffix = '*' if self.dirty else ''
+        self.game.title = f'Drop 1a | Editor - {file_name}{suffix}'
+
     def on_frame(self, frame_num):
+        self.update_title()
         self.draw_grid()
+
         zero_y = (PLAY_START_FRAME - self.time_offset) * 5
         gl.drawLine((0, zero_y), (500, zero_y), (180, 60, 60), 2)
         gl.drawLine((0, PLAYER_MIDPOINT), (500, PLAYER_MIDPOINT), (255, 30, 30), 2)
@@ -95,23 +95,6 @@ class EditorState:
             for preview in previews:
                 if preview:
                     self.draw_object(preview, True)
-
-        if self.confirm_leave:
-            self.draw_leave_confirmation()
-
-    def draw_leave_confirmation(self):
-        gl.drawRect(CONFIRM_RECT, (20, 20, 25))
-        gl.drawRect(CONFIRM_RECT, (180, 180, 180), 3)
-        gl.drawText('Exit without saving?', 105, 275, 30)
-        self.draw_confirm_button('Save and exit', SAVE_EXIT_RECT, 'save')
-        self.draw_confirm_button('Do not save', DONT_SAVE_RECT, 'discard')
-        self.draw_confirm_button('Continue editing', CONTINUE_RECT, 'continue')
-
-    def draw_confirm_button(self, text, rect, button):
-        color = (80, 100, 140) if self.confirm_hovered == button else (50, 60, 80)
-        gl.drawRect(rect, color)
-        gl.drawRect(rect, (220, 220, 220), 2)
-        gl.drawText(text, rect[0] + 20, rect[1] + 13, 20)
 
     def draw_grid(self):
         for x in range(0, 101, self.grid_size):
@@ -146,29 +129,25 @@ class EditorState:
     def on_mouse_move(self, event):
         self.mouse_position = event['pos']
         position = event['pos']
-        if self.confirm_leave:
-            self.confirm_hovered = self.confirm_button_at(position)
-            return
-
         if self.action == 'select':
             return
-        if self.action == 'move' and self.action_object:
+
+        elif self.action == 'move' and self.action_object:
             self.move_object(position)
+
         elif self.action == 'resize' and self.action_object:
             self.resize_object(position)
+
         else:
             self.hovered_object = self.object_at(position)
 
     def on_mouse_down(self, event):
-        if self.confirm_leave:
-            return
-
         if event['button'] == gl.pygame.BUTTON_LEFT:
             modifiers = gl.pygame.key.get_mods()
             clicked = self.object_at(event['pos'])
 
             self.selection_add = bool(
-                modifiers & gl.pygame.KMOD_SHIFT
+                modifiers & (gl.pygame.KMOD_SHIFT | gl.pygame.KMOD_CTRL)
             )
 
             if clicked:
@@ -181,6 +160,7 @@ class EditorState:
                 self.action = 'select'
                 self.selection_start = event['pos']
                 self.mouse_position = event['pos']
+
             else:
                 self.selected_objects.clear()
                 self.action = 'create'
@@ -199,6 +179,7 @@ class EditorState:
                 self.action_originals = {obj: obj for obj in self.action_objects}
                 self.action_current = set(self.action_objects)
                 self.action_before = self.snapshot()
+
         elif event['button'] == gl.pygame.BUTTON_MIDDLE:
             self.action_object = self.object_at(event['pos'])
             if self.action_object:
@@ -212,21 +193,12 @@ class EditorState:
                 self.action_before = self.snapshot()
 
     def on_mouse_up(self, event):
-        if self.confirm_leave:
-            if event['button'] == gl.pygame.BUTTON_LEFT:
-                button = self.confirm_button_at(event['pos'])
-                if button == 'continue':
-                    self.confirm_leave = False
-                elif button == 'discard' and self.exit_to_select:
-                    self.exit_to_select()
-                elif button == 'save' and self.save() and self.exit_to_select:
-                    self.exit_to_select()
-            return
         if event['button'] == gl.pygame.BUTTON_LEFT and self.action == 'select':
             self.select_in_rectangle(self.selection_start, event['pos'], self.selection_add)
             self.selection_start = None
             self.action = None
             return
+
         if event['button'] == gl.pygame.BUTTON_LEFT and self.action == 'create':
             created = self.make_safe_objects(self.action_start, event['pos']) if self.safe_create else [self.make_object(self.action_start, event['pos'])]
             if any(created):
@@ -266,34 +238,26 @@ class EditorState:
 
     def on_key_down(self, key):
         modifiers = gl.pygame.key.get_mods()
-        if self.confirm_leave:
-            if key == gl.pygame.K_ESCAPE:
-                self.confirm_leave = False
-            elif key == gl.pygame.K_RETURN and self.exit_to_select:
-                if self.save():
-                    self.exit_to_select()
-            return
-
         if key == gl.pygame.K_SPACE:
             self.playing = not self.playing
-        elif key == gl.pygame.K_ESCAPE and modifiers & gl.pygame.KMOD_CTRL:
-            self.confirm_leave = True
-            self.playing = False
-        elif key == gl.pygame.K_ESCAPE:
-            self.selected_objects.clear()
-            self.hovered_object = None
+
         elif key == gl.pygame.K_z and modifiers & gl.pygame.KMOD_CTRL and modifiers & gl.pygame.KMOD_SHIFT:
             self.redo()
+
         elif key == gl.pygame.K_z and modifiers & gl.pygame.KMOD_CTRL:
             self.undo()
+
         elif key == gl.pygame.K_d and modifiers & gl.pygame.KMOD_CTRL:
             self.selected_objects.clear()
+
         elif key in (gl.pygame.K_LEFT, gl.pygame.K_a):
             self.pressed_left[key == gl.pygame.K_a] = True
             self.move_state = -1
+
         elif key in (gl.pygame.K_RIGHT, gl.pygame.K_d):
             self.pressed_right[key == gl.pygame.K_d] = True
             self.move_state = 1
+
         elif key == gl.pygame.K_DELETE and modifiers & gl.pygame.KMOD_CTRL and modifiers & gl.pygame.KMOD_SHIFT and modifiers & gl.pygame.KMOD_ALT:
             self.objects.clear()
             self.selected_objects.clear()
@@ -311,6 +275,13 @@ class EditorState:
             self.commit_history()
             self.toast('Object deleted.')
 
+        elif key == gl.pygame.K_ESCAPE and self.exit_to_select:
+            if self.dirty:
+                self.confirm_leave = True
+                self.playing = False
+            else:
+                self.exit_to_select()
+
         elif key in (gl.pygame.K_EQUALS, gl.pygame.K_PLUS) and not modifiers & gl.pygame.KMOD_CTRL:
             self.grid_index = min(len(GRID_SIZES) - 1, self.grid_index + 1)
             self.toast(f'Grid size: {self.grid_index}')
@@ -327,30 +298,16 @@ class EditorState:
             self.pressed_left[key == gl.pygame.K_a] = False
             if not any(self.pressed_left):
                 self.move_state = 1 if any(self.pressed_right) else 0
+
         elif key in (gl.pygame.K_RIGHT, gl.pygame.K_d):
             self.pressed_right[key == gl.pygame.K_d] = False
             if not any(self.pressed_right):
                 self.move_state = -1 if any(self.pressed_left) else 0
 
-    def confirm_button_at(self, position):
-        x, y = position
-        buttons = (
-            ('save', SAVE_EXIT_RECT),
-            ('discard', DONT_SAVE_RECT),
-            ('continue', CONTINUE_RECT),
-        )
-        return next(
-            (
-                button for button, rect in buttons
-                if rect[0] <= x <= rect[0] + rect[2]
-                and rect[1] <= y <= rect[1] + rect[3]
-            ),
-            None,
-        )
-
     def select_object(self, obj, add):
         if not add:
             self.selected_objects.clear()
+
         self.selected_objects.add(obj)
 
     def select_in_rectangle(self, start, end, add):
@@ -367,6 +324,7 @@ class EditorState:
         }
         if not add:
             self.selected_objects.clear()
+
         self.selected_objects.update(selected)
 
     def object_rect(self, obj):
@@ -385,6 +343,7 @@ class EditorState:
     def draw_selection(self):
         if self.action != 'select' or not self.selection_start:
             return
+
         end = self.mouse_position
         left = min(self.selection_start[0], end[0])
         top = min(self.selection_start[1], end[1])
@@ -416,6 +375,7 @@ class EditorState:
     def object_at(self, position):
         if position is None:
             return None
+
         x, y = position
         return next(
             (
@@ -504,6 +464,7 @@ class EditorState:
         self.action_current = set(replacements.values())
         if self.action_preserve_selection:
             self.selected_objects = set(replacements.values())
+
         self.action_object = next(iter(self.action_current), None)
         self.hovered_object = self.action_object
         self.dirty = True
@@ -522,7 +483,7 @@ class EditorState:
                 'speed': old.speed,
                 'move_speed': old.move_speed,
             }
-            values[property_name] = max(0.1 if property_name == 'speed' else 0, values[property_name] + delta)
+            values[property_name] = max(0.1, values[property_name] + delta) if property_name == 'speed' else values[property_name] + delta
             replacements[old] = Object(**values)
 
         if replacements:
@@ -584,24 +545,34 @@ class EditorState:
 
             root.destroy()
             if not file_name:
-                return False
+                return
 
             path = Path(file_name)
 
         path.parent.mkdir(parents=True, exist_ok=True)
-
         with open(path, 'w') as level_file:
             level_file.write(f':name {self.level_name}\n')
             level_file.write(f':description {self.level_description}\n\n')
-
             for obj in sorted(self.objects, key=lambda value: value.time):
-                level_file.write(','.join(f'{value:.3f}'.rstrip('0').removesuffix('.') for value in obj) + '\n')
+                values = self.serialized_object(obj)
+                level_file.write(
+                    ','.join(
+                        f'{value:.3f}'.rstrip('0').removesuffix('.')
+                        for value in values
+                    ) + '\n'
+                )
 
         self.level = Level(self.objects.copy(), self.level_name, self.level_description, path)
         self.dirty = False
 
         self.toast('Saved.')
-        return True
+
+    def serialized_object(self, obj):
+        values = [obj.time, obj.x, obj.width, obj.height, obj.speed, obj.move_speed]
+        defaults = (1.0, 1.0, 1.0, 0.0)
+        while len(values) > 2 and values[-1] == defaults[len(values) - 3]:
+            values.pop()
+        return values
 
     def make_safe_objects(self, start, end):
         safe_space = self.make_object(start, end)

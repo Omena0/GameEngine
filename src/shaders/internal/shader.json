@@ -10,7 +10,7 @@
         {
             "type": "background",
             "filename": "gradient.py",
-            "args": ["gl", "colors", "angle"],
+            "args": ["gl"],
             "static": true
         }
     ]

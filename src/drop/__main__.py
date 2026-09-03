@@ -5,7 +5,7 @@ from .states.level_select import LevelSelectState, load_level
 from .states.play import PlayState
 
 
-game = gl.Game('Drop', (500, 700))
+game = gl.Game('Drop', (500, 700), res=10, max_fps=60, vsync=False)
 current_state = None
 
 

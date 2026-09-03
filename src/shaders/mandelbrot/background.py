@@ -47,9 +47,7 @@ def shader(color, x, y, frame, cx, cy, scale):
                 return m1 + (m2-m1)*hue*6.0
             if hue < 0.5:
                 return m2
-            if hue < TWO_THIRD:
-                return m1 + (m2-m1)*(TWO_THIRD-hue)*6.0
-            return m1
+            return m1 + (m2-m1)*(TWO_THIRD-hue)*6.0 if hue < TWO_THIRD else m1
 
         r = value(h_norm + ONE_THIRD)
         g = value(h_norm)

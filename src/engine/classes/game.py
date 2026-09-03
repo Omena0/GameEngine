@@ -1,3 +1,4 @@
+from time import perf_counter
 from threading import Thread
 import pygame.gfxdraw
 import pygame
@@ -18,11 +19,11 @@ eventMap = {
 class Game:
     __slots__ = ['id', 'version', 'title', 'size', 'width', 'height', 'res', 'max_fps',
                  'bg', 'sprites', 'toasts', 'spriteShaders', 'backgroundShaders', 'events',
-                 'disp', 'clock', 'running', 'frame', 'dt']
+                 'disp', 'clock', 'running', 'frame', 'dt', 'vsync', 'frameTime']
 
     VERSION: int = 0
 
-    def __init__(self, title, size, res=16, max_fps=0, bg=(0,0,0), flags=0):
+    def __init__(self, title, size, res=16, max_fps=0, vsync=True, bg=(0,0,0), flags=0):
         # Make the active game reachable via `from engine import game` from anywhere.
         constants.game = self
         draw.game = self
@@ -35,6 +36,7 @@ class Game:
         self.height = size[1]//res
         self.res = res
         self.max_fps = max_fps
+        self.vsync = vsync
         self.bg = bg
         self.frame = 0
         self.id = ''
@@ -45,10 +47,11 @@ class Game:
         self.backgroundShaders = []
         self.events  = {}
 
-        self.disp = pygame.display.set_mode((self.width*res,self.height*res),vsync=True,flags=flags)
+        self.disp = pygame.display.set_mode((self.width*res,self.height*res),vsync=vsync,flags=flags)
         self.clock = pygame.time.Clock()
 
-        self.dt = 0.001
+        self.dt = 0.1
+        self.frameTime = 0.1
 
     def _draw(self):  # sourcery skip: low-code-quality
         # Background shader pass
@@ -136,7 +139,7 @@ class Game:
             if toast.animTarget >= 0:
                 toast.animTarget -= min(toast.animTarget, 20)
 
-    def shader(self,background = False):
+    def shader(self, background = False):
         """
         Decorator that adds a shader callback to the rendering pipeline.
 
@@ -176,6 +179,7 @@ class Game:
             Thread(target=callback).start()
 
         while self.running:
+            start = perf_counter()
             events = pygame.event.get()
 
             # Event hooks
@@ -203,12 +207,15 @@ class Game:
 
             self._draw_toasts()
 
-            if self.frame % 10 == 0:
-                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.dt*1000} ms')
+            if self.frame % (self.max_fps//6 if self.vsync else 10) == 0:
+                pygame.display.set_caption(f'{self.title} FPS: {round(self.clock.get_fps(),2)} FrameTime: {self.frameTime*1000:.1f} ms')
 
             pygame.display.flip()
 
             self.frame += 1
 
-            self.dt = self.clock.tick(self.max_fps) / 1000
+            self.frameTime = perf_counter() - start
+            self.clock.tick(self.max_fps)
+            self.dt = perf_counter() - start
+
 

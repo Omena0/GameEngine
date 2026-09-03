@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-import json
 from pathlib import Path
 
-from .play import Object, USER_FILE
+from .play import Object, USER_FILE, level_hash
+import json
 import engine as gl
 
 
@@ -52,7 +52,6 @@ def load_level(file: str | Path) -> Level:
         Path(file),
     )
 
-
 class LevelSelectState:
     def __init__(self, game, start_play, open_editor, quit_game, levels_dir=LEVELS_DIR):
         self.game = game
@@ -67,21 +66,26 @@ class LevelSelectState:
         self.cleared_levels = set()
 
     def on_enter(self):
+        self.game.title = 'Drop 1a | Select a level'
         levels = []
         levels.extend(
             (path, load_level(path))
             for path in self.levels_dir.iterdir()
             if path.is_file()
         )
+
         self.levels = sorted(
             levels,
             key=lambda item: (item[1].length, len(item[0].name), item[0].name.lower()),
         )
+        self.cleared_levels = set()
         if USER_FILE.exists():
             with open(USER_FILE) as user_file:
-                self.cleared_levels = set(json.load(user_file).get('cleared_levels', []))
+                self.cleared_levels.update(json.load(user_file).get('cleared_levels', []))
+
         self.selected = min(self.selected, max(0, len(self.levels) - 1))
         self.scroll = 0
+
         if self.levels:
             self.selected_level = self.levels[self.selected][1]
 
@@ -100,11 +104,10 @@ class LevelSelectState:
         visible_rows = (LIST_BOTTOM - LIST_TOP) // ROW_HEIGHT
         for index in range(self.scroll, min(len(self.levels), self.scroll + visible_rows)):
             path, level = self.levels[index]
-            color = (255, 255, 0) if index == self.selected else (255, 255, 255)
-            if path.name in self.cleared_levels:
+            if level_hash(path) in self.cleared_levels:
                 color = (80, 220, 220)
             if index == self.selected:
-                color = (80, 220, 220) if path.name in self.cleared_levels else (255, 255, 0)
+                color = (80, 220, 220) if level_hash(path) in self.cleared_levels else (255, 255, 0)
             gl.drawText(level.name, 75, LIST_TOP + (index - self.scroll) * ROW_HEIGHT, 24, color)
 
         if self.selected_level.description:
@@ -113,6 +116,7 @@ class LevelSelectState:
     def on_key_down(self, key):
         if not self.levels:
             return
+
         if key in (gl.pygame.K_UP, gl.pygame.K_w):
             self.select(self.selected - 1)
         elif key in (gl.pygame.K_DOWN, gl.pygame.K_s):
@@ -126,6 +130,7 @@ class LevelSelectState:
     def on_mouse_down(self, event):
         if event['button'] != gl.pygame.BUTTON_LEFT:
             return
+
         x, y = event['pos']
         if QUIT_RECT[0] <= x <= QUIT_RECT[0] + QUIT_RECT[2] and QUIT_RECT[1] <= y <= QUIT_RECT[1] + QUIT_RECT[3]:
             self.quit_game()
@@ -144,6 +149,7 @@ class LevelSelectState:
         visible_rows = (LIST_BOTTOM - LIST_TOP) // ROW_HEIGHT
         if not (75 <= x <= 450 and LIST_TOP <= y < LIST_TOP + visible_rows * ROW_HEIGHT):
             return None
+
         index = self.scroll + (y - LIST_TOP) // ROW_HEIGHT
         return None if index >= len(self.levels) else self.levels[index][1]
 
@@ -166,6 +172,7 @@ class LevelSelectState:
         index = self.scroll + (y - LIST_TOP) // ROW_HEIGHT
         if index >= len(self.levels):
             return False
+
         self.select(index)
         return True
 
