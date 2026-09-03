@@ -1,5 +1,5 @@
 :name Example level
-:description Pretty hard level frfr
+:description A pretty hard level
 
 0,45,5,5,1.4,-0.5
 0,15,5,5,1.3

@@ -11,7 +11,36 @@ An actual platformer game with a level editor, level loader and shader loader
 
 Vertical 1d bullet hell game with editor.
 
-Editor Controls:
+The example level is really hard btw.
+
+### How to play
+
+Dodge all the objects and you complete the level.
+
+#### Controls
+
+- A / left: move left
+- D / right: move right
+- §: Quick retry
+- esc: Pause menu
+
+#### Objects
+
+Objects have 6 different properties:
+
+- X position: Where the objects is on the X axis
+- Time: When the object will hit the player line
+- Width: How wide the object is
+- Height: How tall it is
+- Speed: How fast it moves
+- Move speed (mv_speed): Changes the players movement speed
+
+mv_speed is added to the player's current speed when the object hits the speed change line.
+
+Objects are colored based on speed. If an object has mv_speed,
+it is instead colored in purple by the amount it changes the player's speed.
+
+### Editor Controls
 
 - Left click + drag: create object
 - Right click + drag object: move object
