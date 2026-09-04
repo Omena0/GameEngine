@@ -2,6 +2,7 @@ from typing import Callable, Any
 from ast import literal_eval
 import pygame
 
+
 fonts = {}
 def getFont(size, bold=False, italic=False) -> pygame.font.Font:
     size = int(size * 1.5)
@@ -33,7 +34,6 @@ def cache(ignore=None) -> Callable:
         return wrapper
 
     return decorator
-
 
 def convert_type(s):
     """Convert a string to its Python literal type if possible."""
@@ -77,4 +77,5 @@ def floodfill(texture, pos, newColor, oldColor):
             stack.append((x, y-1))
         if y < cols-1:
             stack.append((x, y+1))
+
 

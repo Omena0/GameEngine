@@ -2,6 +2,7 @@ import math
 
 
 class Sprite:
+
     def __init__(self, pos, texture, draw=None):
         self.pos = pos
         self.x = pos[0]
@@ -24,6 +25,7 @@ class Sprite:
         self.pos = self.x, self.y
 
     def collides_with(self, sprites):
+
         if isinstance(sprites, list):
             return [sprite for sprite in sprites if self.collides_with(sprite)]
 
@@ -47,6 +49,7 @@ class Sprite:
         ) else None
 
     def collidepoint(self, point):
+
         pos = round(self.pos[0]), round(self.pos[1])
 
         return (
@@ -55,6 +58,7 @@ class Sprite:
         )
 
     def raycast(self, angle, distance=500):
+
         """
         Raycast from the sprite in the given direction
 
@@ -84,4 +88,5 @@ class Sprite:
         self.game = game
         game.sprites.append(self)
         return self
+
 

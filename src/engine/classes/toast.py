@@ -4,9 +4,12 @@ from ..modules.draw import drawText, drawRect
 from ..modules.utils import textSize
 from .. import game
 
+
 class Toast:
+
     __slots__ = ['pos', 'text', 'height', 'width', 'color', 'start_time', 'duration', 'id', 'targetId', 'animTarget']
     def __init__(self, pos, text, height=25, color=(255,255,255), duration=2500):
+
         self.pos = [*pos]
         self.text = text
         self.height = height
@@ -36,3 +39,5 @@ class Toast:
         drawText(self.text, pos[0]+4, pos[1], size=self.height-5, color=self.color)
 
         return False
+
+

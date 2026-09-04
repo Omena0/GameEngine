@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Generator
 import hashlib
 import json
-from typing import Generator
 
 import engine as gl
 
@@ -27,7 +27,6 @@ def level_hash(file: str | Path) -> str:
         for index, value in enumerate(digest)
     )
     return hashlib.sha256(transformed).hexdigest()
-
 
 @dataclass(frozen=True, slots=True)
 class Object:
@@ -225,6 +224,7 @@ class PlayState:
         if USER_FILE.exists():
             with open(USER_FILE) as user_file:
                 cleared.update(json.load(user_file).get('cleared_levels', []))
+
         cleared.add(level_hash(self.level.path))
         with open(USER_FILE, 'w') as user_file:
             json.dump({'cleared_levels': sorted(cleared)}, user_file, indent=2)
@@ -321,3 +321,5 @@ class PlayState:
 
     def button_contains(self, rect, x, y):
         return rect[0] <= x <= rect[0] + rect[2] and rect[1] <= y <= rect[1] + rect[3]
+
+

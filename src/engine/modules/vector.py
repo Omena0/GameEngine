@@ -3,6 +3,7 @@ import pygame
 from ..modules.math import distance
 from .. import game
 
+
 class Vec2:
     __slots__ = ['_x', '_y', 'length']
     def __init__(self,x,y):
@@ -78,4 +79,5 @@ class Vec2:
 
     def draw(self,x,y):
         pygame.draw.line(game.disp,(255,0,0),(x,y),(x+self.x,y+self.y),2)
+
 

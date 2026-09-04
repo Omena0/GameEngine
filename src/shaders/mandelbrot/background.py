@@ -1,5 +1,5 @@
-#type:ignore
 from numba import njit
+
 
 ONE_THIRD = 1.0 / 3.0
 TWO_THIRD = 2.0 / 3.0
@@ -71,3 +71,5 @@ def shader(color, x, y, frame, cx, cy, scale):
 
     # Points in the set are black
     return (0, 0, 0)
+
+

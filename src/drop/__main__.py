@@ -1,7 +1,7 @@
-import engine as gl
-from .states.editor import EditorState
 from .states.level_select import LevelSelectState, load_level
+from .states.editor import EditorState
 from .states.play import PlayState
+import engine as gl
 
 
 game = gl.Game('Drop', (500, 700), res=10, max_fps=1000, vsync=False)
@@ -13,57 +13,45 @@ def set_state(state):
     current_state = state
     current_state.on_enter()
 
-
 def start_play(level):
     level_source = load_level(level.path) if getattr(level, 'path', None) else level
     set_state(PlayState(game, level_source, lambda: start_play(level_source), show_levels))
 
-
 def quit_game():
     game.running = False
-
 
 def show_levels():
     set_state(LevelSelectState(game, start_play, open_editor, quit_game))
 
-
 def open_editor(level=None):
     set_state(EditorState(game, level, show_levels))
 
-
 set_state(LevelSelectState(game, start_play, open_editor, quit_game))
-
 
 @game.on('frame')
 def frame(frame_num):
     current_state.update(game.dt)
     current_state.on_frame(frame_num)
 
-
 @game.on('keyDown')
 def keydown(key):
     current_state.on_key_down(key['key'])
-
 
 @game.on('keyUp')
 def keyup(key):
     current_state.on_key_up(key['key'])
 
-
 @game.on('mouseMove')
 def mouse_move(event):
     getattr(current_state, 'on_mouse_move', lambda event: None)(event)
-
 
 @game.on('mouseDown')
 def mouse_down(event):
     getattr(current_state, 'on_mouse_down', lambda event: None)(event)
 
-
 @game.on('mouseUp')
 def mouse_up(event):
     getattr(current_state, 'on_mouse_up', lambda event: None)(event)
-
 
 @game.on('scroll')
 def scroll(event):
@@ -71,3 +59,5 @@ def scroll(event):
 
 
 game.run()
+
+

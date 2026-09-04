@@ -1,6 +1,7 @@
 from typing import Literal
 import pygame
 
+
 def keyPressed(key:str):# -> Any:
     return pygame.key.get_pressed()[getattr(pygame, f'K_{key}')]
 
@@ -26,3 +27,5 @@ __all__ = [
     'keyPressed',
     'modPressed'
 ]
+
+

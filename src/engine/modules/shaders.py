@@ -1,14 +1,13 @@
-from types import ModuleType
 from typing import Literal
+from types import ModuleType
 import pygame.gfxdraw
 import pygame
 import json
 import os
 
-from ..constants import game, VERSION
+from ..constants import VERSION, game
 
-### Shader Functions ###
-# Cache for static shader surfaces
+
 _static_shader_cache = {}
 
 def load_as_module(source, name, globals=None) -> ModuleType:
@@ -205,4 +204,5 @@ def applyShader(surf, shader, res=4, mask=None, view_rect=None, args=None) -> py
         _static_shader_cache[cache_key] = result_surf.copy()
 
     return result_surf
+
 

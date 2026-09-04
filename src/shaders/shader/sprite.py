@@ -1,5 +1,8 @@
 # type: ignore
 
+
+
+
 def shader(color, x, y, frame, sprite=None):
     x -= cx
     y -= cy
@@ -12,4 +15,5 @@ def shader(color, x, y, frame, sprite=None):
     b = gl.sin((x + y) * 0.08 + frame) * 70
 
     return gl.clamp_ints(*gl.sum_ints((r, g, b), gl.sum_ints(color,(-100,-100,-100))))
+
 

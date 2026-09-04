@@ -1,5 +1,8 @@
 #type:ignore
 
+
+
+
 def to_linear(c):
     return (c / 255) ** 0.5
 
@@ -47,3 +50,5 @@ def shader(
     b = to_srgb(b_lin)
 
     return gl.clamp_ints(r, g, b)
+
+

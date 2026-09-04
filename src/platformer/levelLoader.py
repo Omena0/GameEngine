@@ -1,5 +1,6 @@
 import os
 
+
 FORMAT_NUM = 2
 
 class Level:
@@ -94,9 +95,5 @@ class Level:
 
             # Write EOF
             file.write("EOF")
-
-
-
-
 
 

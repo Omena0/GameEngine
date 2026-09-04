@@ -5,7 +5,6 @@ from ..modules.shaders import applyShader
 from ..modules.utils import textSize, getFont
 from .. import game
 
-### Drawing primitives ###
 
 def drawText(text: str, x: int, y: int, size=10, color=(255, 255, 255), bold=False, italic=False, dest_surf=None) -> pygame.Surface:
     font = getFont(size, bold, italic)
@@ -152,3 +151,5 @@ __all__ = [
     'drawRectShaded',
     'drawTextShaded'
 ]
+
+

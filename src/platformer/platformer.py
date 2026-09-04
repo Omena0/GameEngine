@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from tkinter import colorchooser, filedialog
 from collections.abc import Callable
-from .levelLoader import Level
+from tkinter import colorchooser, filedialog
 import pygame_textinput
-from .enums import *
-import engine as gl
 import time as t
 import os
+
+from .levelLoader import Level
+from .enums import *
+import engine as gl
+
 
 VERSION = 6
 
 # Use convert_type from engine
 from engine import convert_type
+
 
 ### [Screen()]
 class Screen:
@@ -1192,3 +1195,5 @@ def levelSelectScroll(event):
 
 # Run the game
 game.run()
+
+

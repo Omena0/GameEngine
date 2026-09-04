@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
-
-from .play import Object, USER_FILE, level_hash
 import json
+
+from .play import level_hash, USER_FILE, Object
 import engine as gl
 
 
@@ -201,3 +201,5 @@ class LevelSelectState:
 
     def on_key_up(self, key):
         pass
+
+

@@ -51,6 +51,7 @@ it is instead colored in purple by the amount it changes the player's speed.
 - Ctrl + click object: select object
 - Shift + click object: add object to selection
 
+- Space: Play/pause
 - Scroll: move through time
 - Shift + scroll: change object's player move speed modifier
 - Control + scroll: change object's speed

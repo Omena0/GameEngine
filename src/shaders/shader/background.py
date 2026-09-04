@@ -1,5 +1,8 @@
 # type: ignore
 
+
+
+
 def shader(color, x, y, frame):
     x += 100
     y += 100

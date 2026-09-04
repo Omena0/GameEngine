@@ -1,4 +1,8 @@
 
+
+
+
+
 class ObjectType:
     platform = 0
     text = 1
@@ -23,4 +27,5 @@ class TriggerState:
 class TriggerTypes:
     move = 0
     spawn = 1
+
 

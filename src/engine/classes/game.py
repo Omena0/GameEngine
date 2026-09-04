@@ -1,11 +1,12 @@
-from time import perf_counter
 from threading import Thread
+from time import perf_counter
 import pygame.gfxdraw
 import pygame
 
-from .. import constants
-from ..modules import draw, shaders
+from ..modules import shaders, draw
 from ..classes import toast
+from .. import constants
+
 
 eventMap = {
     "keyDown": pygame.KEYDOWN,
