@@ -20,6 +20,8 @@ class Level:
     name: str = 'Unnamed level'
     description: str = ''
     path: Path | None = None
+    song: str = ''
+    markers: tuple[float, ...] = ()
 
     @property
     def length(self):
@@ -50,6 +52,8 @@ def load_level(file: str | Path) -> Level:
         metadata.get('name', 'Unnamed level'),
         metadata.get('description', ''),
         Path(file),
+        metadata.get('song', ''),
+        tuple(sorted(float_all(*filter(None, metadata.get('markers', '').split(','))))),
     )
 
 class LevelSelectState:

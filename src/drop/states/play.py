@@ -12,7 +12,9 @@ REFERENCE_FPS = 60
 SPEED_APPLY_POINT = 600
 PLAYER_SIZE = 25
 USER_FILE = Path(__file__).parent.parent / 'user.json'
+SONGS_DIR = Path(__file__).parent.parent / 'songs'
 PASS_EXIT_RECT = (150, 350, 200, 60)
+MUSIC_FRAME_SHIFT = 70
 
 
 def level_hash(file: str | Path) -> str:
@@ -27,6 +29,33 @@ def level_hash(file: str | Path) -> str:
         for index, value in enumerate(digest)
     )
     return hashlib.sha256(transformed).hexdigest()
+
+def load_user_settings() -> dict:
+    """Read the drop preferences file, falling back to defaults when unreadable."""
+    if not USER_FILE.exists():
+        return {}
+
+    try:
+        with open(USER_FILE) as user_file:
+            data = json.load(user_file)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    return data if isinstance(data, dict) else {}
+
+def load_audio_offset() -> int:
+    """Audio sync offset in milliseconds, tuned per machine."""
+    try:
+        return int(load_user_settings().get('audio_offset_ms', 0))
+    except (TypeError, ValueError):
+        return 0
+
+def load_music_volume() -> float:
+    """Music volume between 0 and 1."""
+    try:
+        return min(1.0, max(0.0, float(load_user_settings().get('music_volume', 0.7))))
+    except (TypeError, ValueError):
+        return 0.7
 
 @dataclass(frozen=True, slots=True)
 class Object:
@@ -67,6 +96,7 @@ class PlayState:
         self.exit_to_select = exit_to_select
         self.objects: set[Object] = set()
         self.player_x = 50
+        self.player_y = 150
         self.move_speed = 1
         self.move_state = 0
         self.pressed_left = [False, False]
@@ -79,13 +109,48 @@ class PlayState:
         self.pass_hovered = False
         self.applied_move_speeds = set()
         self.elapsed_frames = 0.0
+        self.song = getattr(level, 'song', '')
+        self.song_loaded = False
+        self.audio_offset_ms = load_audio_offset()
 
     def on_enter(self):
         self.objects = self.level.objects.copy()
         self.start_frame = self.game.frame
         self.applied_move_speeds.clear()
         self.elapsed_frames = 0.0
+        self.game_over = 0
+        self.level_passed = False
         self.game.title = f'Drop 1a | {self.level.name}'
+        self.load_song()
+
+    def load_song(self):
+        """Load the level's song so playback can follow the scroll position."""
+        gl.mixer.stop()
+        self.song_loaded = False
+
+        song_path = SONGS_DIR / self.song
+        if not self.song or not song_path.exists():
+            return
+
+        if gl.mixer.load(song_path):
+            gl.mixer.set_volume(load_music_volume())
+            self.song_loaded = True
+
+    @property
+    def audio_offset_seconds(self):
+        return self.audio_offset_ms / 1000
+
+    def sync_music(self):
+        """Keep the song locked to the position heard while charting in the editor."""
+        if not self.song_loaded:
+            return
+
+        if self.game_over or self.paused or self.level_passed:
+            gl.mixer.pause()
+            return
+
+        editor_time = self.elapsed_frames - MUSIC_FRAME_SHIFT
+        gl.mixer.follow(editor_time / REFERENCE_FPS + self.audio_offset_seconds)
 
     def update(self, dt):
         if self.game_over or self.paused:
@@ -96,7 +161,7 @@ class PlayState:
 
     def collision_check(self, x, y, width, height) -> bool:
         player_center_x = self.player_x * 5
-        player_center_y = 50
+        player_center_y = self.player_y
         player_radius = PLAYER_SIZE / 2.1
 
         closest_x = max(x, min(player_center_x, x + width))
@@ -108,6 +173,8 @@ class PlayState:
         return distance_x**2 + distance_y**2 <= player_radius**2
 
     def on_frame(self, frame_num):
+        self.sync_music()
+
         if not self.game_over and not self.paused and not self.level_passed:
             self.elapsed_frames += self.game.dt * REFERENCE_FPS
 
@@ -123,7 +190,7 @@ class PlayState:
             base_y = (time * 7) - (frame_num * SCROLL_SPEED)
 
             x *= 5
-            y = 50 + (base_y - 50) * speed
+            y = self.player_y + (base_y - self.player_y) * speed
 
             width *= 5
             height *= 7
@@ -161,23 +228,24 @@ class PlayState:
                 )
                 continue
 
-            gl.drawRect((x, y, width, height), color)
+            gl.drawRect((x, y, width, height), (255,255,255))
+            gl.drawRect((x+1, y+1, width-2, height-2), color)
 
         if not self.objects and not self.game_over and not self.level_passed:
             self.level_passed = True
             self.mark_level_cleared()
 
-        gl.drawLine((0, 50), (500, 50), (30, 30, 30), 2)
+        gl.drawLine((0, self.player_y), (500, self.player_y), (30, 30, 30), 2)
         gl.drawLine((0, SPEED_APPLY_POINT), (500, SPEED_APPLY_POINT), (100, 30, 30), 2)
         gl.drawRect(
-            (self.player_x * 5 - PLAYER_SIZE / 2, 50 - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE),
+            (self.player_x * 5 - PLAYER_SIZE / 2, self.player_y - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE),
             (255, 0, 0),
         )
 
         if self.game_over and not self.level_passed:
             size = gl.textSize('Level Failed', 40, True)
             gl.drawTextShaded(
-                shader, 'Level Failed', 126, 250, 40, True,
+                shader, 'Level Failed', 126, 300, 40, True,
                 args=(
                     [ # Colors
                         (255, 30, 30),

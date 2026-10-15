@@ -10,6 +10,7 @@ current_state = None
 
 def set_state(state):
     global current_state
+    gl.mixer.stop()
     current_state = state
     current_state.on_enter()
 

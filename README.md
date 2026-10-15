@@ -40,6 +40,25 @@ mv_speed is added to the player's current speed when the object hits the speed c
 Objects are colored based on speed. If an object has mv_speed,
 it is instead colored in purple by the amount it changes the player's speed.
 
+### Level format
+
+Optional metadata lines start with `:`. Object lines are comma separated
+`time,x,width,height,speed,move_speed`, where trailing values may be omitted.
+
+```
+:name Example level
+:description A pretty hard level
+:song song.ogg
+:markers 12.5,30,47.25
+
+0,45,5,5,1.4,-0.5
+```
+
+Songs are loaded from `src/drop/songs/`, so `:song` only holds the file name.
+
+`user.json` holds the cleared levels plus `music_volume` and `audio_offset_ms`,
+the sync trim in milliseconds between the song and the level.
+
 ### Editor Controls
 
 - Left click + drag: create object
@@ -57,6 +76,11 @@ it is instead colored in purple by the amount it changes the player's speed.
 - Control + scroll: change object's speed
 - Alt + scroll: change grid size
 
+- Click the top bar: jump the song to that position
+- Ctrl + m: add a marker at the mouse position
+- Ctrl + shift + m: delete the marker nearest to the cursor
+- [ / ]: nudge the audio offset (hold shift for 25 ms)
+
 - Ctrl + s: save
 - Ctrl + Esc: back to level select
 - Ctrl + z: undo
@@ -64,3 +88,7 @@ it is instead colored in purple by the amount it changes the player's speed.
 
 - Delete: delete object
 - Ctrl + shift + alt + delete: delete all objects
+
+The thin bar along the top is the song timeline. Its brightness at each column
+comes from that point of the song, markers are the yellow ticks, and the red
+cursor reaches slightly below the bar so it stays findable.

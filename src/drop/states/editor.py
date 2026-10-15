@@ -1,8 +1,10 @@
 from tkinter import filedialog, Tk
 from pathlib import Path
+import json
 
-from .level_select import load_level, LEVELS_DIR, Level
-from .play import Object
+from .level_select import LEVELS_DIR, Level
+from .play import Object, USER_FILE
+from .reachability import compute_reachability, draw_reachability
 import engine as gl
 
 
@@ -10,11 +12,18 @@ GRID_SIZES = (1, 2, 5, 10, 20)
 GRID_COLOR = (35, 35, 35)
 OBJECT_COLOR = (255, 255, 255)
 SELECTED_COLOR = (80, 220, 120)
-PLAY_START_FRAME = 10
+PLAY_START_FRAME = 50
 TIME_SCALE = 7
-PLAYER_MIDPOINT = 50
 PLAYER_SIZE = 25
 NORMAL_FRAME_RATE = 60
+SONGS_DIR = Path(__file__).parent.parent / 'songs'
+SCREEN_WIDTH = 500
+SCREEN_HEIGHT = 700
+PROGRESS_BAR_HEIGHT = 12
+PROGRESS_BAR_OVERHANG = 4
+MARKER_BAR_HEIGHT = 4
+MARKER_COLOR = (255, 200, 60)
+CURSOR_COLOR = (255, 60, 60)
 
 
 class EditorState:
@@ -28,19 +37,37 @@ class EditorState:
         self.objects = set() if level is None else level.objects.copy()
         self.level_name = 'New level' if level is None else level.name
         self.level_description = '' if level is None else level.description
+        self.song = '' if level is None else getattr(level, 'song', '')
 
         # Editor state
         self.time_offset = 0
         self.grid_index = 2
+
+        # Audio state
+        self.audio_offset_ms = self.load_audio_offset()
+        self.music_volume = self.load_music_volume()
+        self.song_loaded = False
+        self.waveform_bar = None
+
+        # Markers (times in editor time units)
+        self.markers = sorted(getattr(level, 'markers', []) or [])
 
         # Flags
         self.dirty = False
         self.playing = False
         self.safe_create = False
         self.hovered_object = None
+        self.reachability = False
+        self.reach_tolerance = 5
+        self.reach_label_rect = None
+        self.reachability_map = None
+        self.reach_cache_key = None
+        self.reachability_max_age = 300
 
         # Player pos
         self.player_x = 50
+        self.player_y = 250
+        self.mouse_position = (0, 0)
 
         # Movement handling
         self.move_state = 0
@@ -72,14 +99,127 @@ class EditorState:
     def grid_size(self):
         return GRID_SIZES[self.grid_index]
 
+    def load_audio_offset(self):
+        try:
+            return int(self.load_user_settings().get('audio_offset_ms', 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def load_music_volume(self):
+        try:
+            return float(self.load_user_settings().get('music_volume', 0.7))
+        except (TypeError, ValueError):
+            return 0.7
+
+    def load_user_settings(self):
+        if not USER_FILE.exists():
+            return {}
+
+        try:
+            with open(USER_FILE) as user_file:
+                data = json.load(user_file)
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+        return data if isinstance(data, dict) else {}
+
+    def save_audio_settings(self):
+        data = self.load_user_settings()
+        data['audio_offset_ms'] = self.audio_offset_ms
+        data['music_volume'] = self.music_volume
+
+        with open(USER_FILE, 'w') as user_file:
+            json.dump(data, user_file, indent=2)
+
     def on_enter(self):
         self.update_title()
+        self.load_song()
+
+    def load_song(self):
+        self.song_loaded = False
+        self.waveform_bar = None
+        gl.mixer.stop()
+
+        if not self.song:
+            return
+
+        song_path = SONGS_DIR / self.song
+        if not song_path.exists():
+            return
+
+        if gl.mixer.load(song_path):
+            self.song_loaded = True
+            gl.mixer.set_volume(self.music_volume)
+            self.build_waveform_bar()
+
+    def sync_music(self):
+        if not self.song_loaded:
+            return
+
+        if not self.playing:
+            gl.mixer.pause()
+            return
+
+        target = self.time_to_song_seconds(self.time_offset) + self.audio_offset_seconds
+        gl.mixer.follow(target)
+
+    @property
+    def audio_offset_seconds(self):
+        return self.audio_offset_ms / 1000
+
+    def build_waveform_bar(self):
+        """Bake the song envelope into a surface so the timeline is cheap to draw."""
+        surface = gl.pygame.Surface((SCREEN_WIDTH, PROGRESS_BAR_HEIGHT), gl.pygame.SRCALPHA)
+        surface.fill((0, 0, 0, 0))
+
+        waveform = gl.mixer.get_waveform(SCREEN_WIDTH)
+        for column in range(SCREEN_WIDTH):
+            amplitude = waveform[column]
+            gl.pygame.draw.line(
+                surface,
+                (int(18 + amplitude * 112), int(32 + amplitude * 148), int(56 + amplitude * 199)),
+                (column, 0),
+                (column, PROGRESS_BAR_HEIGHT - 1),
+            )
+
+        self.waveform_bar = surface
 
     def update(self, dt):
         if self.playing:
             self.time_offset += dt * NORMAL_FRAME_RATE
             self.player_x += self.move_state * dt * 50
             self.player_x = gl.clamp(self.player_x, min_=PLAYER_SIZE / 10, max_=100 - PLAYER_SIZE / 10)
+
+        self.sync_music()
+
+    def time_to_song_seconds(self, time_value):
+        return time_value / NORMAL_FRAME_RATE
+
+    def song_seconds_to_time(self, seconds):
+        return seconds * NORMAL_FRAME_RATE
+
+    @property
+    def timeline_length(self):
+        """Editor time span the top timeline bar represents."""
+        level_end = max((obj.time + obj.height for obj in self.objects), default=0)
+        return max(self.song_seconds_to_time(gl.mixer.get_length()), level_end + 50, 120)
+
+    @property
+    def progress_x(self):
+        """Screen x of the timeline cursor for the current editor time."""
+        return int(gl.clamp(self.time_offset / self.timeline_length * SCREEN_WIDTH, 0, SCREEN_WIDTH - 1))
+
+    def time_to_timeline_x(self, time_value):
+        return int(gl.clamp(time_value / self.timeline_length * SCREEN_WIDTH, 0, SCREEN_WIDTH - 1))
+
+    def screen_y_for_time(self, time_value):
+        """Screen y where an object at ``time_value`` sits for unit speed.\n
+            :param time_value: Time in editor time units
+            :type time_value: float
+            :return: Screen y coordinate
+            :rtype: float
+        """
+        return time_value * TIME_SCALE - (self.time_offset - PLAY_START_FRAME) * 5
 
     def update_title(self):
         file_name = self.level.path.name if self.level and self.level.path else 'untitled.txt'
@@ -92,18 +232,19 @@ class EditorState:
 
         zero_y = (PLAY_START_FRAME - self.time_offset) * 5
         gl.drawLine((0, zero_y), (500, zero_y), (180, 60, 60), 2)
-        gl.drawLine((0, PLAYER_MIDPOINT), (500, PLAYER_MIDPOINT), (255, 30, 30), 2)
-        gl.drawText('EDITOR', 20, 20, 28)
-        gl.drawText(f'Grid: {self.grid_size:g}', 20, 55, 16)
+        gl.drawLine((0, self.player_y), (500, self.player_y), (255, 30, 30), 2)
+
+        self.draw_progress_bar()
 
         for obj in sorted(self.objects, key=lambda value: value.time):
             self.draw_object(obj, obj in self.selected_objects or obj is self.hovered_object)
 
         self.draw_selection()
+        self.draw_markers()
 
         if self.playing:
             gl.drawRect(
-                (self.player_x * 5 - PLAYER_SIZE / 2, PLAYER_MIDPOINT - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE),
+                (self.player_x * 5 - PLAYER_SIZE / 2, self.player_y - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE),
                 (255, 0, 0),
             )
 
@@ -114,17 +255,90 @@ class EditorState:
                 if preview:
                     self.draw_object(preview, True)
 
+        if self.reachability:
+            self.draw_reachability()
+
+    def compute_reachability(self):
+        self.reachability_map, self.reachability_max_time = compute_reachability(self.objects, self.reach_tolerance)
+
+    def draw_reachability(self):
+        if not getattr(self, 'reachability_map', None):
+            self.compute_reachability()
+        draw_reachability(self, self.reachability_map, self.reachability_max_time)
+
     def draw_grid(self):
         for x in range(0, 101, self.grid_size):
             screen_x = x * 5
-            gl.drawLine((screen_x, 0), (screen_x, 700), GRID_COLOR)
+            gl.drawLine((screen_x, 0), (screen_x, SCREEN_HEIGHT), GRID_COLOR)
 
         first_time = int(self.time_offset // self.grid_size) * self.grid_size
         last_time = int(self.time_offset + 140) + self.grid_size
 
         for time in range(first_time, last_time, self.grid_size):
             screen_y = (time - self.time_offset) * 5
-            gl.drawLine((0, screen_y), (500, screen_y), GRID_COLOR)
+            gl.drawLine((0, screen_y), (SCREEN_WIDTH, screen_y), GRID_COLOR)
+
+    def draw_progress_bar(self):
+        """Draw the song timeline, its amplitude envelope and the cursor."""
+        gl.drawRect((0, 0, SCREEN_WIDTH, PROGRESS_BAR_HEIGHT), (14, 14, 18))
+
+        if self.waveform_bar:
+            self.game.disp.blit(self.waveform_bar, (0, 0))
+
+        for marker in self.markers:
+            marker_x = self.time_to_timeline_x(marker)
+            gl.drawRect((marker_x, 0, 2, PROGRESS_BAR_HEIGHT), MARKER_COLOR)
+
+        gl.drawRect(
+            (self.progress_x - 1, 0, 2, PROGRESS_BAR_HEIGHT + PROGRESS_BAR_OVERHANG),
+            CURSOR_COLOR,
+        )
+
+    def draw_markers(self):
+        """Draw each marker as a horizontal bar in the level grid."""
+        for marker in self.markers:
+            marker_y = self.screen_y_for_time(marker)
+
+            if -MARKER_BAR_HEIGHT <= marker_y <= SCREEN_HEIGHT:
+                gl.drawLine((0, marker_y), (SCREEN_WIDTH, marker_y), MARKER_COLOR, MARKER_BAR_HEIGHT)
+
+    # Markers
+    def add_marker(self):
+        """Drop a marker at the mouse position, snapped to the grid."""
+        marker = float(round(self.time_from_y(self.mouse_position[1]) / self.grid_size) * self.grid_size)
+
+        if marker in self.markers:
+            return
+
+        self.markers = sorted(self.markers + [marker])
+        self.dirty = True
+        self.commit_history()
+        self.toast(f'Marker at {marker:g}')
+
+    def delete_nearest_marker(self):
+        """Remove the marker closest to the cursor, then closest in time."""
+        if not self.markers:
+            return
+
+        cursor_y = self.mouse_position[1]
+        nearest = min(
+            self.markers,
+            key=lambda marker: (abs(self.screen_y_for_time(marker) - cursor_y), marker),
+        )
+
+        self.markers = [marker for marker in self.markers if marker != nearest]
+        self.dirty = True
+        self.commit_history()
+        self.toast(f'Removed marker at {nearest:g}')
+
+    def adjust_audio_offset(self, delta_ms):
+        """Shift the song offset used for editor and play sync.\n
+            :param delta_ms: Amount of offset change in milliseconds
+            :type delta_ms: int
+        """
+        self.audio_offset_ms += delta_ms
+        self.save_audio_settings()
+        self.toast(f'Audio offset: {self.audio_offset_ms} ms')
 
     def draw_object(self, obj, selected=False):
         x = obj.x * 5
@@ -160,9 +374,14 @@ class EditorState:
             self.hovered_object = self.object_at(position)
 
     def on_mouse_down(self, event):
+        position = event['pos']
+        if position[1] <= PROGRESS_BAR_HEIGHT and event['button'] == gl.pygame.BUTTON_LEFT:
+            self.seek_to_timeline_x(position[0])
+            return
+
         if event['button'] == gl.pygame.BUTTON_LEFT:
             modifiers = gl.pygame.key.get_mods()
-            clicked = self.object_at(event['pos'])
+            clicked = self.object_at(position)
 
             self.selection_add = bool(
                 modifiers & (gl.pygame.KMOD_SHIFT | gl.pygame.KMOD_CTRL)
@@ -171,26 +390,26 @@ class EditorState:
             if clicked:
                 self.select_object(clicked, self.selection_add)
                 self.action = 'select'
-                self.selection_start = event['pos']
-                self.mouse_position = event['pos']
+                self.selection_start = position
+                self.mouse_position = position
 
             elif self.selection_add:
                 self.action = 'select'
-                self.selection_start = event['pos']
-                self.mouse_position = event['pos']
+                self.selection_start = position
+                self.mouse_position = position
 
             else:
                 self.selected_objects.clear()
                 self.action = 'create'
-                self.action_start = self.snap_position(event['pos'])
-                self.mouse_position = event['pos']
+                self.action_start = self.snap_position(position)
+                self.mouse_position = position
                 self.safe_create = bool(modifiers & gl.pygame.KMOD_ALT)
 
         elif event['button'] == gl.pygame.BUTTON_RIGHT:
-            self.action_object = self.object_at(event['pos'])
+            self.action_object = self.object_at(position)
             if self.action_object:
                 self.action = 'move'
-                self.action_start = event['pos']
+                self.action_start = position
                 self.action_original = self.action_object
                 self.action_preserve_selection = self.action_object in self.selected_objects
                 self.action_objects = self.selected_objects if self.action_preserve_selection else {self.action_object}
@@ -199,16 +418,27 @@ class EditorState:
                 self.action_before = self.snapshot()
 
         elif event['button'] == gl.pygame.BUTTON_MIDDLE:
-            self.action_object = self.object_at(event['pos'])
+            self.action_object = self.object_at(position)
             if self.action_object:
                 self.action = 'resize'
-                self.action_start = event['pos']
+                self.action_start = position
                 self.action_original = self.action_object
                 self.action_preserve_selection = self.action_object in self.selected_objects
                 self.action_objects = self.selected_objects if self.action_preserve_selection else {self.action_object}
                 self.action_originals = {obj: obj for obj in self.action_objects}
                 self.action_current = set(self.action_objects)
                 self.action_before = self.snapshot()
+
+    def seek_to_timeline_x(self, x):
+        """Move the editor timeline to the song position under ``x``.\n
+            :param x: Screen x inside the timeline bar
+            :type x: int
+        """
+        self.time_offset = gl.clamp(
+            x / SCREEN_WIDTH * self.timeline_length,
+            0,
+            self.timeline_length,
+        )
 
     def on_mouse_up(self, event):
         if event['button'] == gl.pygame.BUTTON_LEFT and self.action == 'select':
@@ -239,7 +469,16 @@ class EditorState:
         self.safe_create = False
 
     def on_scroll(self, event):
-        hovered = self.object_at(getattr(event, 'pos', None)) if 'pos' in event else self.hovered_object
+        if self.reachability and self.reach_label_rect:
+            lx, ly, rx, ry = self.reach_label_rect
+            px, py = self.mouse_position
+            if lx <= px <= rx and ly <= py <= ry:
+                direction = 1 if event['y'] > 0 else -1
+                self.reach_tolerance = max(0, min(100, self.reach_tolerance + direction))
+                self.compute_reachability()
+                return
+
+        hovered = self.object_at(self.mouse_position)
         modifiers = gl.pygame.key.get_mods()
         if modifiers & gl.pygame.KMOD_ALT:
             direction = 1 if event['y'] > 0 else -1
@@ -258,6 +497,18 @@ class EditorState:
         modifiers = gl.pygame.key.get_mods()
         if key == gl.pygame.K_SPACE:
             self.playing = not self.playing
+
+        elif key == gl.pygame.K_m and modifiers & gl.pygame.KMOD_CTRL and modifiers & gl.pygame.KMOD_SHIFT:
+            self.delete_nearest_marker()
+
+        elif key == gl.pygame.K_m and modifiers & gl.pygame.KMOD_CTRL:
+            self.add_marker()
+
+        elif key == gl.pygame.K_LEFTBRACKET:
+            self.adjust_audio_offset(-25 if modifiers & gl.pygame.KMOD_SHIFT else -1)
+
+        elif key == gl.pygame.K_RIGHTBRACKET:
+            self.adjust_audio_offset(25 if modifiers & gl.pygame.KMOD_SHIFT else 1)
 
         elif key == gl.pygame.K_z and modifiers & gl.pygame.KMOD_CTRL and modifiers & gl.pygame.KMOD_SHIFT:
             self.redo()
@@ -310,6 +561,21 @@ class EditorState:
 
         elif key == gl.pygame.K_s and modifiers & gl.pygame.KMOD_CTRL:
             self.save()
+
+        elif key == gl.pygame.K_r:
+            self.reachability = not self.reachability
+            if self.reachability:
+                self.compute_reachability()
+
+        elif key == gl.pygame.K_t:
+            self.reach_tolerance = min(100, self.reach_tolerance + 1)
+            if self.reachability:
+                self.compute_reachability()
+
+        elif key == gl.pygame.K_y:
+            self.reach_tolerance = max(0, self.reach_tolerance - 1)
+            if self.reachability:
+                self.compute_reachability()
 
     def on_key_up(self, key):
         if key in (gl.pygame.K_LEFT, gl.pygame.K_a):
@@ -479,10 +745,10 @@ class EditorState:
 
     def screen_y(self, obj):
         base_y = obj.time * TIME_SCALE - (self.time_offset - PLAY_START_FRAME) * 5
-        return PLAYER_MIDPOINT + (base_y - PLAYER_MIDPOINT) * obj.speed
+        return self.player_y + (base_y - self.player_y) * obj.speed
 
     def time_from_y(self, y, speed=1):
-        base_y = PLAYER_MIDPOINT + (y - PLAYER_MIDPOINT) / speed
+        base_y = self.player_y + (y - self.player_y) / speed
         return (base_y + (self.time_offset - PLAY_START_FRAME) * 5) / TIME_SCALE
 
     def replace_object(self, old, **changes):
@@ -543,7 +809,7 @@ class EditorState:
             self.commit_history()
 
     def snapshot(self):
-        return frozenset(self.objects), frozenset(self.selected_objects)
+        return frozenset(self.objects), frozenset(self.selected_objects), tuple(self.markers)
 
     def commit_history(self):
         state = self.snapshot()
@@ -558,6 +824,7 @@ class EditorState:
     def restore_history(self, state):
         self.objects = set(state[0])
         self.selected_objects = set(state[1])
+        self.markers = list(state[2])
         self.hovered_object = None
         self.dirty = True
 
@@ -602,6 +869,18 @@ class EditorState:
             level_file.write(f':name {self.level_name}\n')
             level_file.write(f':description {self.level_description}\n\n')
 
+            if self.song:
+                level_file.write(f':song {self.song}\n')
+
+            if self.markers:
+                markers = ','.join(
+                    f'{marker:.3f}'.rstrip('0').removesuffix('.')
+                    for marker in sorted(self.markers)
+                )
+                level_file.write(f':markers {markers}\n')
+
+            level_file.write('\n')
+
             for obj in sorted(self.objects, key=lambda value: value.time):
                 values = self.serialized_object(obj)
 
@@ -612,7 +891,7 @@ class EditorState:
                     ) + '\n'
                 )
 
-        self.level = Level(self.objects.copy(), self.level_name, self.level_description, path)
+        self.level = Level(self.objects.copy(), self.level_name, self.level_description, path, self.song, self.markers)
         self.dirty = False
 
         self.toast('Saved.')
